@@ -1,0 +1,13 @@
+schemaVersion: 1
+enabledWorkflows:
+  - simulator
+  - logging
+  - debugging
+  - ui-automation
+  - xcode-ide
+sessionDefaults:
+  projectPath: "./Yomi.xcodeproj"
+  scheme: "Yomi"
+  simulatorName: "iPhone 17"
+  platform: "iOS Simulator"
+  useLatestOS: true

@@ -10,6 +10,13 @@
 		4757D6052F84043C0091908D /* Yomi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Yomi.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXBuildFile section */
+		A10000012F84043C0091908D /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A10000002F84043C0091908D /* ZIPFoundation */; };
+		A10000032F84043C0091908D /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = A10000022F84043C0091908D /* SwiftSoup */; };
+		A10000052F84043C0091908D /* Mecab-Swift in Frameworks */ = {isa = PBXBuildFile; productRef = A10000042F84043C0091908D /* Mecab-Swift */; };
+		A10000072F84043C0091908D /* IPADic in Frameworks */ = {isa = PBXBuildFile; productRef = A10000062F84043C0091908D /* IPADic */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		4757D6072F84043C0091908D /* Yomi */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -23,6 +30,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000012F84043C0091908D /* ZIPFoundation in Frameworks */,
+				A10000032F84043C0091908D /* SwiftSoup in Frameworks */,
+				A10000052F84043C0091908D /* Mecab-Swift in Frameworks */,
+				A10000072F84043C0091908D /* IPADic in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +76,10 @@
 			);
 			name = Yomi;
 			packageProductDependencies = (
+				A10000002F84043C0091908D /* ZIPFoundation */,
+				A10000022F84043C0091908D /* SwiftSoup */,
+				A10000042F84043C0091908D /* Mecab-Swift */,
+				A10000062F84043C0091908D /* IPADic */,
 			);
 			productName = Yomi;
 			productReference = 4757D6052F84043C0091908D /* Yomi.app */;
@@ -91,9 +106,15 @@
 			knownRegions = (
 				en,
 				Base,
+				"zh-Hans",
 			);
 			mainGroup = 4757D5FC2F84043C0091908D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A10000082F84043C0091908D /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+				A10000092F84043C0091908D /* XCRemoteSwiftPackageReference "SwiftSoup" */,
+				A100000A2F84043C0091908D /* XCRemoteSwiftPackageReference "Mecab-Swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4757D6062F84043C0091908D /* Products */;
 			projectDirPath = "";
@@ -330,6 +351,56 @@
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A10000082F84043C0091908D /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.19;
+			};
+		};
+		A10000092F84043C0091908D /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scinfu/SwiftSoup.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.8.3;
+			};
+		};
+		A100000A2F84043C0091908D /* XCRemoteSwiftPackageReference "Mecab-Swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/shinjukunian/Mecab-Swift.git";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A10000002F84043C0091908D /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000082F84043C0091908D /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
+		};
+		A10000022F84043C0091908D /* SwiftSoup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000092F84043C0091908D /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoup;
+		};
+		A10000042F84043C0091908D /* Mecab-Swift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A100000A2F84043C0091908D /* XCRemoteSwiftPackageReference "Mecab-Swift" */;
+			productName = "Mecab-Swift";
+		};
+		A10000062F84043C0091908D /* IPADic */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A100000A2F84043C0091908D /* XCRemoteSwiftPackageReference "Mecab-Swift" */;
+			productName = IPADic;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
 		4757D6002F84043C0091908D /* Build configuration list for PBXProject "Yomi" */ = {
