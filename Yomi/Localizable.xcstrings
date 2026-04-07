@@ -1,6 +1,15 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "" : {
+
+    },
+    "%lld%%" : {
+
+    },
+    "Bookmark" : {
+
+    },
     "Bookshelf" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -51,6 +60,9 @@
           }
         }
       }
+    },
+    "Default font scale" : {
+
     },
     "Display" : {
       "extractionState" : "manual",
@@ -103,6 +115,23 @@
         }
       }
     },
+    "Import an EPUB with the + button." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import an EPUB with the + button."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击右上角 + 号导入 EPUB。"
+          }
+        }
+      }
+    },
     "Import EPUB" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -133,23 +162,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "导入失败"
-          }
-        }
-      }
-    },
-    "Import an EPUB with the + button." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Import an EPUB with the + button."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点击右上角 + 号导入 EPUB。"
           }
         }
       }
@@ -255,6 +267,12 @@
           }
         }
       }
+    },
+    "Share" : {
+
+    },
+    "The reader always uses the final part-of-speech annotated layout." : {
+
     },
     "The reader currently focuses on segmentation and ruby, while other interactions stay intentionally minimal." : {
       "extractionState" : "manual",
@@ -391,6 +409,12 @@
           }
         }
       }
+    },
+    "字体大小" : {
+
+    },
+    "词性标记" : {
+
     }
   },
   "version" : "1.0"

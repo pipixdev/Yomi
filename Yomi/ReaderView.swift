@@ -185,39 +185,13 @@ private struct ParagraphView: View {
     let tokens: [ReaderToken]
     let fontScale: Double
 
-    private var tokenSegments: [[ReaderToken]] {
-        guard !tokens.isEmpty else { return [] }
-
-        var result: [[ReaderToken]] = [[]]
-        let hardBreakPunctuation: Set<String> = ["。", "！", "？", "!", "?"]
-        let softBreakPunctuation: Set<String> = ["、", "，", ","]
-
-        for token in tokens {
-            if softBreakPunctuation.contains(token.surface), !result[result.count - 1].isEmpty {
-                result.append([])
-            }
-
-            result[result.count - 1].append(token)
-
-            if hardBreakPunctuation.contains(token.surface) {
-                result.append([])
-            }
-        }
-
-        return result.filter { !$0.isEmpty }
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(tokenSegments.enumerated()), id: \.offset) { _, segment in
-                FlowLayout(spacing: 8, rowSpacing: 14) {
-                    ForEach(segment) { token in
-                        TokenView(
-                            token: token,
-                            fontScale: fontScale
-                        )
-                    }
-                }
+        FlowLayout(spacing: 2, rowSpacing: 10) {
+            ForEach(tokens) { token in
+                TokenView(
+                    token: token,
+                    fontScale: fontScale
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -232,10 +206,6 @@ private struct TokenView: View {
         max(11, 12 * fontScale)
     }
 
-    private var partOfSpeechLineHeight: CGFloat {
-        max(11, 12 * fontScale)
-    }
-
     private var surfaceFontSize: CGFloat {
         28 * fontScale
     }
@@ -244,12 +214,11 @@ private struct TokenView: View {
         max(10, 11 * fontScale)
     }
 
-    private var tokenBubbleWidth: CGFloat {
-        let surfaceWidth = TextWidthMeasurer.width(
+    private var tokenWidth: CGFloat {
+        TextWidthMeasurer.width(
             of: token.surface,
             font: PlatformFont.systemFont(ofSize: surfaceFontSize, weight: .bold)
         )
-        return surfaceWidth + 24
     }
 
     private var rubyTracking: CGFloat {
@@ -259,7 +228,7 @@ private struct TokenView: View {
             of: reading,
             font: PlatformFont.systemFont(ofSize: rubyFontSize, weight: .medium)
         )
-        let availableSpacing = tokenBubbleWidth - rubyWidth
+        let availableSpacing = tokenWidth - rubyWidth
         guard availableSpacing > 0 else { return 0 }
 
         // Spread kana to fit the kanji token width without becoming unnatural.
@@ -267,15 +236,14 @@ private struct TokenView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .center, spacing: 2) {
             Text(token.reading ?? " ")
                 .font(.system(size: rubyFontSize, weight: .medium))
                 .foregroundStyle(Color.white.opacity(0.60))
                 .tracking(rubyTracking)
                 .lineLimit(1)
                 .opacity(token.reading != nil && token.partOfSpeech != .symbol ? 1 : 0)
-                .frame(width: tokenBubbleWidth, alignment: .center)
-                .frame(height: rubyLineHeight, alignment: .bottomLeading)
+                .frame(height: rubyLineHeight, alignment: .bottom)
 
             Text(token.surface)
                 .font(
@@ -285,30 +253,14 @@ private struct TokenView: View {
                     )
                 )
                 .foregroundStyle(.white.opacity(0.97))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(Color(red: 0.18, green: 0.19, blue: 0.21))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
-                }
-                .overlay(alignment: .bottomLeading) {
+                .overlay(alignment: .bottom) {
                     if token.partOfSpeech != .symbol {
                         Capsule(style: .continuous)
                             .fill(token.partOfSpeech.accentColor.opacity(0.95))
-                            .frame(height: 3)
-                            .padding(.horizontal, 7)
-                            .padding(.bottom, 4)
+                            .frame(height: 2.5)
+                            .offset(y: 3)
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                .frame(width: tokenBubbleWidth, alignment: .center)
-
-            Text(token.partOfSpeech.label)
-                .font(.system(size: max(10, 11 * fontScale), weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.72))
-                .opacity(token.partOfSpeech == .symbol ? 0 : 1)
-                .frame(height: partOfSpeechLineHeight, alignment: .topLeading)
         }
         .accessibilityElement(children: .combine)
     }

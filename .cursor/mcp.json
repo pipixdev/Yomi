@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "XcodeBuildMCP": {
+      "command": "/Users/pipix/.bun/bin/bunx",
+      "args": ["xcodebuildmcp@latest", "mcp"]
+    }
+  }
+}
