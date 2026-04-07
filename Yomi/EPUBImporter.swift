@@ -3,6 +3,7 @@
 //  Yomi
 //
 
+import CryptoKit
 import Foundation
 import SwiftSoup
 import ZIPFoundation
@@ -26,6 +27,7 @@ enum EPUBImportError: LocalizedError {
 
 struct EPUBImporter {
     func `import`(bookID: UUID, from sourceURL: URL, using fileManager: FileManager = .default) throws -> BookRecord {
+        let sourceFingerprint = try fingerprint(for: sourceURL)
         let folderURL = try Self.bookFolderURL(for: bookID, using: fileManager)
         let epubURL = folderURL.appendingPathComponent("book.epub")
         let extractionURL = folderURL.appendingPathComponent("extracted", isDirectory: true)
@@ -40,39 +42,35 @@ struct EPUBImporter {
 
         try unzip(epubURL: epubURL, to: extractionURL)
 
-        let containerURL = extractionURL.appendingPathComponent("META-INF/container.xml")
-        let containerXML = try String(contentsOf: containerURL, encoding: .utf8)
-        guard let packageRelativePath = firstMatch(in: containerXML, pattern: #"full-path="([^"]+)""#, group: 1) else {
-            throw EPUBImportError.invalidContainer
-        }
-
+        let packageRelativePath = try packagePath(in: extractionURL)
         let packageURL = extractionURL.appendingPathComponent(packageRelativePath)
         let packageDirectory = packageURL.deletingLastPathComponent()
-        let packageXML = try String(contentsOf: packageURL, encoding: .utf8)
-        let packageDocument = try OPFDocument(xml: packageXML)
+        let packageXML = try loadText(from: packageURL)
+        let packageDocument = try OPFDocument(packageRelativePath: packageRelativePath, xml: packageXML)
+        let navigation = try loadNavigation(for: packageDocument, packageDirectory: packageDirectory)
+        let fallbackTitles = firstNavigationTitles(from: navigation)
+        let extractedChapters = try extractChapters(
+            from: packageDocument,
+            packageDirectory: packageDirectory,
+            fallbackTitles: fallbackTitles
+        )
 
-        var chapters: [BookChapter] = []
-        for item in packageDocument.spineItems {
-            guard let href = packageDocument.manifest[item] else { continue }
-            let chapterURL = packageDirectory.appendingPathComponent(href)
-            let html = try String(contentsOf: chapterURL, encoding: .utf8)
-            let paragraphs = try extractParagraphs(fromHTML: html)
-            guard !paragraphs.isEmpty else { continue }
-
-            chapters.append(
-                BookChapter(
-                    id: href,
-                    title: prettifiedTitle(from: href, fallback: packageDocument.title),
-                    paragraphs: paragraphs
-                )
-            )
-        }
-
+        let chapters = extractedChapters.map(\.chapter)
         guard !chapters.isEmpty else {
             throw EPUBImportError.unsupportedBook
         }
 
-        let coverPath = try extractCover(from: packageDocument, extractionRoot: extractionURL, packageDirectory: packageDirectory)
+        let tableOfContents = resolveTableOfContents(
+            navigation,
+            with: extractedChapters,
+            fallbackTitle: packageDocument.title
+        )
+
+        let coverPath = try extractCover(
+            from: packageDocument,
+            extractionRoot: extractionURL,
+            packageDirectory: packageDirectory
+        )
 
         return BookRecord(
             id: bookID,
@@ -80,8 +78,16 @@ struct EPUBImporter {
             author: packageDocument.author,
             importedAt: Date(),
             chapters: chapters,
+            tableOfContents: tableOfContents.isEmpty ? derivedNavigation(from: chapters) : tableOfContents,
             epubRelativePath: "Books/\(bookID.uuidString)/book.epub",
-            coverRelativePath: coverPath
+            coverRelativePath: coverPath,
+            sourceFingerprint: sourceFingerprint,
+            pageProgression: packageDocument.pageProgression,
+            readingProgress: chapters.first.flatMap { chapter in
+                chapter.paragraphs.first.map {
+                    ReaderLocation(chapterID: chapter.id, paragraphID: $0.id, updatedAt: .now)
+                }
+            }
         )
     }
 
@@ -99,44 +105,217 @@ struct EPUBImporter {
         return root
     }
 
-    private func unzip(epubURL: URL, to destinationURL: URL) throws {
-        let archive = try Archive(url: epubURL, accessMode: .read)
-
-        for entry in archive {
-            let entryURL = destinationURL.appendingPathComponent(entry.path)
-            let parentURL = entryURL.deletingLastPathComponent()
-            try FileManager.default.createDirectory(at: parentURL, withIntermediateDirectories: true)
-
-            if entry.path.hasSuffix("/") {
-                try FileManager.default.createDirectory(at: entryURL, withIntermediateDirectories: true)
-            } else {
-                _ = try archive.extract(entry, to: entryURL)
-            }
+    private func packagePath(in extractionURL: URL) throws -> String {
+        let containerURL = extractionURL.appendingPathComponent("META-INF/container.xml")
+        let containerXML = try loadText(from: containerURL)
+        guard let packageRelativePath = firstMatch(in: containerXML, pattern: #"full-path="([^"]+)""#, group: 1) else {
+            throw EPUBImportError.invalidContainer
         }
+        return normalizedRelativePath(packageRelativePath)
     }
 
-    private func extractParagraphs(fromHTML html: String) throws -> [String] {
-        let doc = try SwiftSoup.parse(html)
-        try doc.select("script, style, nav").remove()
+    private func loadNavigation(for package: OPFDocument, packageDirectory: URL) throws -> [NavigationReference] {
+        if let navigationItem = package.navigationItem {
+            let navigationURL = packageDirectory.appendingPathComponent(navigationItem.href)
+            let navigationHTML = try loadText(from: navigationURL)
+            let document = try SwiftSoup.parse(navigationHTML)
+            return try parseNavigationDocument(document, baseHref: navigationItem.href)
+        }
 
-        let blocks = try doc.select("body h1, body h2, body h3, body p, body li, body blockquote, body div")
-        var paragraphs = blocks.compactMap { element -> String? in
-            let text = try? element.text(trimAndNormaliseWhitespace: true)
-            guard let text else { return nil }
-            let normalized = text.replacingOccurrences(of: "\u{00A0}", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard normalized.count > 1 else { return nil }
-            return normalized
+        guard let ncxItem = package.ncxItem else { return [] }
+        let ncxURL = packageDirectory.appendingPathComponent(ncxItem.href)
+        let ncxXML = try loadText(from: ncxURL)
+        let parser = NCXParser(baseHref: ncxItem.href)
+        return parser.parse(xml: ncxXML)
+    }
+
+    private func extractChapters(
+        from package: OPFDocument,
+        packageDirectory: URL,
+        fallbackTitles: [String: String]
+    ) throws -> [ExtractedChapter] {
+        var chapters: [ExtractedChapter] = []
+
+        for spineItem in package.spineItems where spineItem.linear {
+            guard let manifestItem = package.manifest[spineItem.idref] else { continue }
+            guard manifestItem.mediaType.contains("html") else { continue }
+
+            let chapterURL = packageDirectory.appendingPathComponent(manifestItem.href)
+            let html = try loadText(from: chapterURL)
+            let chapter = try extractChapter(
+                fromHTML: html,
+                href: manifestItem.href,
+                fallbackTitle: fallbackTitles[normalizedRelativePath(manifestItem.href)] ?? package.title
+            )
+
+            guard !chapter.chapter.paragraphs.isEmpty else { continue }
+            chapters.append(chapter)
+        }
+
+        return chapters
+    }
+
+    private func extractChapter(fromHTML html: String, href: String, fallbackTitle: String) throws -> ExtractedChapter {
+        let doc = try SwiftSoup.parse(html)
+        try doc.select("script, style, nav, noscript").remove()
+
+        guard let body = doc.body() else {
+            return ExtractedChapter(
+                chapter: BookChapter(id: chapterID(for: href), title: fallbackTitle, sourceHref: href, paragraphs: []),
+                anchorToParagraph: [:]
+            )
+        }
+
+        let blockTags: Set<String> = ["h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote", "div"]
+        var paragraphs: [BookParagraph] = []
+        var anchorToParagraph: [String: String] = [:]
+        var detectedTitle: String?
+
+        for element in try body.getAllElements().array() {
+            let tagName = element.tagNameNormalised()
+            guard blockTags.contains(tagName) else { continue }
+            guard shouldExtract(element: element, within: blockTags) else { continue }
+
+            let text = normalizedText(try element.text(trimAndNormaliseWhitespace: true))
+            let role = paragraphRole(for: tagName, text: text)
+            guard !text.isEmpty || role == .separator else { continue }
+            guard role == .separator || text.count > 1 else { continue }
+
+            let paragraphID = "\(chapterID(for: href))-p\(paragraphs.count)"
+            let anchors = try anchors(for: element)
+            let paragraph = BookParagraph(
+                id: paragraphID,
+                text: text,
+                role: role,
+                anchor: anchors.first
+            )
+
+            if detectedTitle == nil, role == .heading {
+                detectedTitle = text
+            }
+
+            paragraphs.append(paragraph)
+            for anchor in anchors {
+                anchorToParagraph[anchor] = paragraphID
+            }
         }
 
         if paragraphs.isEmpty {
-            let bodyText = try doc.body()?.text(trimAndNormaliseWhitespace: true) ?? ""
-            paragraphs = bodyText
+            let fallbackParagraphs = normalizedText(try body.text(trimAndNormaliseWhitespace: true))
                 .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .map(normalizedText)
                 .filter { !$0.isEmpty }
+
+            paragraphs = fallbackParagraphs.enumerated().map { index, text in
+                BookParagraph(
+                    id: "\(chapterID(for: href))-p\(index)",
+                    text: text,
+                    role: .body
+                )
+            }
         }
 
-        return paragraphs.removingNearDuplicates()
+        let chapterTitle = detectedTitle?.nonEmpty ?? fallbackTitle
+        let chapter = BookChapter(
+            id: chapterID(for: href),
+            title: chapterTitle,
+            sourceHref: href,
+            anchor: paragraphs.first?.anchor,
+            paragraphs: paragraphs
+        )
+
+        return ExtractedChapter(chapter: chapter, anchorToParagraph: anchorToParagraph)
+    }
+
+    private func resolveTableOfContents(
+        _ references: [NavigationReference],
+        with chapters: [ExtractedChapter],
+        fallbackTitle: String
+    ) -> [BookNavigationPoint] {
+        let normalizedPathToChapter = Dictionary(uniqueKeysWithValues: chapters.map {
+            (normalizedRelativePath($0.chapter.sourceHref), $0.chapter)
+        })
+
+        let anchors = chapters.reduce(into: [String: (chapterID: String, paragraphID: String?)]()) { result, chapter in
+            for (anchor, paragraphID) in chapter.anchorToParagraph {
+                result[anchor] = (chapter.chapter.id, paragraphID)
+            }
+        }
+
+        let resolved = references.compactMap { reference in
+            resolve(reference: reference, chapters: normalizedPathToChapter, anchors: anchors)
+        }
+
+        guard !resolved.isEmpty else {
+            return derivedNavigation(from: chapters.map(\.chapter), fallbackTitle: fallbackTitle)
+        }
+
+        return resolved
+    }
+
+    private func resolve(
+        reference: NavigationReference,
+        chapters: [String: BookChapter],
+        anchors: [String: (chapterID: String, paragraphID: String?)]
+    ) -> BookNavigationPoint? {
+        let components = reference.src.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        let relativeHref = normalizedRelativePath(components.first ?? "")
+        let anchor = components.count > 1 ? components[1] : nil
+
+        let matchedChapter: BookChapter?
+        if !relativeHref.isEmpty {
+            matchedChapter = chapters[relativeHref]
+        } else if let anchor, let anchorMatch = anchors[anchor] {
+            matchedChapter = chapters.values.first { $0.id == anchorMatch.chapterID }
+        } else {
+            matchedChapter = nil
+        }
+
+        guard let chapter = matchedChapter else { return nil }
+        let paragraphID = anchor.flatMap { anchors[$0]?.paragraphID } ?? chapter.paragraphs.first?.id
+        let children = reference.children.compactMap { child in
+            resolve(reference: child, chapters: chapters, anchors: anchors)
+        }
+
+        return BookNavigationPoint(
+            id: reference.id,
+            title: reference.title.nonEmpty ?? chapter.title,
+            chapterID: chapter.id,
+            paragraphID: paragraphID,
+            anchor: anchor,
+            children: children
+        )
+    }
+
+    private func derivedNavigation(from chapters: [BookChapter], fallbackTitle: String? = nil) -> [BookNavigationPoint] {
+        let title = fallbackTitle?.nonEmpty
+        return chapters.enumerated().map { index, chapter in
+            BookNavigationPoint(
+                id: "derived-\(chapter.id)",
+                title: chapter.title.nonEmpty ?? title ?? "Chapter \(index + 1)",
+                chapterID: chapter.id,
+                paragraphID: chapter.paragraphs.first?.id,
+                anchor: chapter.anchor,
+                children: []
+            )
+        }
+    }
+
+    private func firstNavigationTitles(from references: [NavigationReference]) -> [String: String] {
+        var titles: [String: String] = [:]
+
+        func walk(_ items: [NavigationReference]) {
+            for item in items {
+                let href = normalizedRelativePath(item.src.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? "")
+                if !href.isEmpty, titles[href] == nil {
+                    titles[href] = item.title
+                }
+                walk(item.children)
+            }
+        }
+
+        walk(references)
+        return titles
     }
 
     private func extractCover(from package: OPFDocument, extractionRoot: URL, packageDirectory: URL) throws -> String? {
@@ -155,6 +334,147 @@ struct EPUBImporter {
         return "Books/\(coverDirectory.lastPathComponent)/\(destinationURL.lastPathComponent)"
     }
 
+    private func unzip(epubURL: URL, to destinationURL: URL) throws {
+        let archive = try Archive(url: epubURL, accessMode: .read)
+
+        for entry in archive {
+            let entryURL = destinationURL.appendingPathComponent(entry.path)
+            let parentURL = entryURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: parentURL, withIntermediateDirectories: true)
+
+            if entry.path.hasSuffix("/") {
+                try FileManager.default.createDirectory(at: entryURL, withIntermediateDirectories: true)
+            } else {
+                _ = try archive.extract(entry, to: entryURL)
+            }
+        }
+    }
+
+    private func parseNavigationDocument(_ document: Document, baseHref: String) throws -> [NavigationReference] {
+        let tocLinks = try document.select("nav a[href], body a[href]").array()
+        var references: [NavigationReference] = []
+
+        for (index, element) in tocLinks.enumerated() {
+            let title = normalizedText(try element.text(trimAndNormaliseWhitespace: true))
+            let href = try element.attr("href")
+            guard !href.isEmpty, !title.isEmpty else { continue }
+
+            references.append(
+                NavigationReference(
+                    id: "nav-\(index)",
+                    title: title,
+                    src: resolveHref(href, relativeTo: baseHref),
+                    children: []
+                )
+            )
+        }
+
+        return references
+    }
+
+    private func shouldExtract(element: Element, within blockTags: Set<String>) -> Bool {
+        if element.tagNameNormalised() == "div" {
+            return element.children().array().allSatisfy { child in
+                !blockTags.contains(child.tagNameNormalised())
+            }
+        }
+
+        return true
+    }
+
+    private func anchors(for element: Element) throws -> [String] {
+        var anchors: [String] = []
+
+        if let identifier = element.id().nonEmpty {
+            anchors.append(identifier)
+        }
+
+        for descendant in try element.select("[id], a[name]").array() {
+            let identifier = try descendant.id().nonEmpty ?? descendant.attr("name").nonEmpty
+            if let identifier, !anchors.contains(identifier) {
+                anchors.append(identifier)
+            }
+        }
+
+        return anchors
+    }
+
+    private func paragraphRole(for tagName: String, text: String) -> BookParagraphRole {
+        if tagName.hasPrefix("h") {
+            return .heading
+        }
+
+        if text == "○" || text == "●" {
+            return .separator
+        }
+
+        switch tagName {
+        case "blockquote":
+            return .quote
+        case "li":
+            return .listItem
+        default:
+            return .body
+        }
+    }
+
+    private func loadText(from url: URL) throws -> String {
+        let data = try Data(contentsOf: url)
+
+        if let text = String(data: data, encoding: .utf8) {
+            return text
+        }
+
+        if let text = String(data: data, encoding: .unicode) {
+            return text
+        }
+
+        if let text = String(data: data, encoding: .shiftJIS) {
+            return text
+        }
+
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private func chapterID(for href: String) -> String {
+        normalizedRelativePath(href)
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ".", with: "-")
+    }
+
+    private func resolveHref(_ href: String, relativeTo baseHref: String) -> String {
+        let components = href.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        let pathComponent = components.first ?? ""
+        let anchor = components.count > 1 ? components[1] : nil
+
+        let resolvedPath: String
+        if pathComponent.isEmpty {
+            resolvedPath = normalizedRelativePath(baseHref)
+        } else {
+            let baseDirectory = (baseHref as NSString).deletingLastPathComponent
+            resolvedPath = normalizedRelativePath((baseDirectory as NSString).appendingPathComponent(pathComponent))
+        }
+
+        if let anchor, !anchor.isEmpty {
+            return "\(resolvedPath)#\(anchor)"
+        }
+
+        return resolvedPath
+    }
+
+    private func normalizedRelativePath(_ path: String) -> String {
+        let expanded = ("/" as NSString).appendingPathComponent(path)
+        let standardized = (expanded as NSString).standardizingPath
+        return String(standardized.drop(while: { $0 == "/" }))
+    }
+
+    private func normalizedText(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: "\u{3000}", with: "　")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func firstMatch(in text: String, pattern: String, group: Int) -> String? {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
@@ -168,21 +488,47 @@ struct EPUBImporter {
         return String(text[captureRange])
     }
 
-    private func prettifiedTitle(from href: String, fallback: String) -> String {
-        let filename = URL(fileURLWithPath: href).deletingPathExtension().lastPathComponent
-        let cleaned = filename.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ")
-        return cleaned.isEmpty ? fallback : cleaned
+    private func fingerprint(for url: URL) throws -> String {
+        let data = try Data(contentsOf: url)
+        return SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
     }
+}
+
+private struct ExtractedChapter {
+    let chapter: BookChapter
+    let anchorToParagraph: [String: String]
+}
+
+private struct ManifestItem {
+    let id: String
+    let href: String
+    let mediaType: String
+    let properties: Set<String>
+}
+
+private struct SpineItem {
+    let idref: String
+    let linear: Bool
+}
+
+private struct NavigationReference {
+    let id: String
+    let title: String
+    let src: String
+    let children: [NavigationReference]
 }
 
 private struct OPFDocument {
     let title: String
     let author: String
-    let manifest: [String: String]
-    let spineItems: [String]
+    let manifest: [String: ManifestItem]
+    let spineItems: [SpineItem]
     let coverHref: String?
+    let ncxItem: ManifestItem?
+    let navigationItem: ManifestItem?
+    let pageProgression: PageProgression
 
-    init(xml: String) throws {
+    init(packageRelativePath: String, xml: String) throws {
         let parser = OPFParser()
         guard parser.parse(xml: xml) else {
             throw EPUBImportError.invalidPackage
@@ -192,14 +538,24 @@ private struct OPFDocument {
         author = parser.author?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? String(localized: "Unknown Author")
         manifest = parser.manifest
         spineItems = parser.spine
+        pageProgression = parser.pageProgression
 
-        if let coverID = parser.coverID, let href = parser.manifest[coverID] {
+        if let coverID = parser.coverID, let href = parser.manifest[coverID]?.href {
             coverHref = href
-        } else if let id = parser.coverPropertyID, let href = parser.manifest[id] {
+        } else if let id = parser.coverPropertyID, let href = parser.manifest[id]?.href {
             coverHref = href
         } else {
             coverHref = nil
         }
+
+        if let tocID = parser.tocID {
+            ncxItem = parser.manifest[tocID]
+        } else {
+            ncxItem = parser.manifest.values.first(where: { $0.mediaType == "application/x-dtbncx+xml" })
+        }
+
+        navigationItem = parser.manifest.values.first(where: { $0.properties.contains("nav") })
+        _ = packageRelativePath
     }
 }
 
@@ -210,8 +566,10 @@ private final class OPFParser: NSObject, XMLParserDelegate {
     var author: String?
     var coverID: String?
     var coverPropertyID: String?
-    var manifest: [String: String] = [:]
-    var spine: [String] = []
+    var tocID: String?
+    var pageProgression: PageProgression = .default
+    var manifest: [String: ManifestItem] = [:]
+    var spine: [SpineItem] = []
 
     func parse(xml: String) -> Bool {
         guard let data = xml.data(using: .utf8) else { return false }
@@ -233,18 +591,37 @@ private final class OPFParser: NSObject, XMLParserDelegate {
             coverID = attributeDict["content"]
         }
 
-        if elementName == "item" {
-            if let id = attributeDict["id"], let href = attributeDict["href"] {
-                manifest[id] = href
-            }
+        if elementName == "item",
+           let id = attributeDict["id"],
+           let href = attributeDict["href"],
+           let mediaType = attributeDict["media-type"] {
+            manifest[id] = ManifestItem(
+                id: id,
+                href: href,
+                mediaType: mediaType,
+                properties: Set((attributeDict["properties"] ?? "").split(separator: " ").map(String.init))
+            )
 
-            if let properties = attributeDict["properties"], properties.contains("cover-image") {
-                coverPropertyID = attributeDict["id"]
+            if (attributeDict["properties"] ?? "").contains("cover-image") {
+                coverPropertyID = id
+            }
+        }
+
+        if elementName == "spine" {
+            tocID = attributeDict["toc"]
+            switch attributeDict["page-progression-direction"]?.lowercased() {
+            case "rtl":
+                pageProgression = .rightToLeft
+            case "ltr":
+                pageProgression = .leftToRight
+            default:
+                pageProgression = .default
             }
         }
 
         if elementName == "itemref", let idref = attributeDict["idref"] {
-            spine.append(idref)
+            let linear = attributeDict["linear"]?.lowercased() != "no"
+            spine.append(SpineItem(idref: idref, linear: linear))
         }
     }
 
@@ -269,19 +646,107 @@ private final class OPFParser: NSObject, XMLParserDelegate {
     }
 }
 
-private extension Array where Element == String {
-    func removingNearDuplicates() -> [String] {
-        var result: [String] = []
-        var seen = Set<String>()
+private final class NCXParser: NSObject, XMLParserDelegate {
+    private struct MutablePoint {
+        var id: String
+        var title: String = ""
+        var src: String = ""
+        var children: [MutablePoint] = []
+    }
 
-        for text in self {
-            let key = text.replacingOccurrences(of: " ", with: "")
-            guard !seen.contains(key) else { continue }
-            seen.insert(key)
-            result.append(text)
+    private let baseHref: String
+    private var stack: [MutablePoint] = []
+    private var roots: [MutablePoint] = []
+    private var currentText = ""
+    private var isInsideNavLabelText = false
+
+    init(baseHref: String) {
+        self.baseHref = baseHref
+    }
+
+    func parse(xml: String) -> [NavigationReference] {
+        guard let data = xml.data(using: .utf8) else { return [] }
+        let parser = XMLParser(data: data)
+        parser.delegate = self
+        guard parser.parse() else { return [] }
+        return roots.map(toNavigationReference)
+    }
+
+    func parser(
+        _ parser: XMLParser,
+        didStartElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?,
+        attributes attributeDict: [String: String] = [:]
+    ) {
+        currentText = ""
+
+        if elementName == "navPoint" {
+            stack.append(MutablePoint(id: attributeDict["id"] ?? UUID().uuidString))
+        } else if elementName == "content", var point = stack.popLast() {
+            point.src = resolveHref(attributeDict["src"] ?? "")
+            stack.append(point)
+        } else if elementName == "text" {
+            isInsideNavLabelText = true
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        currentText += string
+    }
+
+    func parser(
+        _ parser: XMLParser,
+        didEndElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?
+    ) {
+        if elementName == "text", isInsideNavLabelText, var point = stack.popLast() {
+            point.title = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+            stack.append(point)
+            isInsideNavLabelText = false
+        } else if elementName == "navPoint", let point = stack.popLast() {
+            if var parent = stack.popLast() {
+                parent.children.append(point)
+                stack.append(parent)
+            } else {
+                roots.append(point)
+            }
         }
 
-        return result
+        currentText = ""
+    }
+
+    private func resolveHref(_ href: String) -> String {
+        let components = href.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        let pathComponent = components.first ?? ""
+        let baseDirectory = (baseHref as NSString).deletingLastPathComponent
+        let resolvedPath = normalizedRelativePath((baseDirectory as NSString).appendingPathComponent(pathComponent))
+        if components.count > 1 {
+            return "\(resolvedPath)#\(components[1])"
+        }
+        return resolvedPath
+    }
+
+    private func normalizedRelativePath(_ path: String) -> String {
+        let expanded = ("/" as NSString).appendingPathComponent(path)
+        let standardized = (expanded as NSString).standardizingPath
+        return String(standardized.drop(while: { $0 == "/" }))
+    }
+
+    private func toNavigationReference(_ point: MutablePoint) -> NavigationReference {
+        NavigationReference(
+            id: point.id,
+            title: point.title,
+            src: point.src,
+            children: point.children.map(toNavigationReference)
+        )
+    }
+}
+
+private extension Element {
+    func tagNameNormalised() -> String {
+        tagName().lowercased()
     }
 }
 

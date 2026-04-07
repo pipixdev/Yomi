@@ -1,5 +1,6 @@
 schemaVersion: 1
 enabledWorkflows:
+  - macos
   - simulator
   - logging
   - debugging
@@ -8,6 +9,6 @@ enabledWorkflows:
 sessionDefaults:
   projectPath: "./Yomi.xcodeproj"
   scheme: "Yomi"
+  platform: "macOS"
   simulatorName: "iPhone 17"
-  platform: "iOS Simulator"
   useLatestOS: true

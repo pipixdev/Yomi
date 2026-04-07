@@ -15,10 +15,15 @@ private typealias PlatformImage = NSImage
 #endif
 
 struct BookshelfView: View {
+    private struct ReaderSelection: Identifiable {
+        let id: UUID
+    }
+
     @EnvironmentObject private var store: LibraryStore
 
     @State private var importingFile = false
-    @State private var selectedBook: BookRecord?
+    @State private var selectedBook: ReaderSelection?
+    @State private var pendingRemoval: BookRecord?
 
     private let columns = [
         GridItem(.adaptive(minimum: 180, maximum: 220), spacing: 28)
@@ -26,19 +31,7 @@ struct BookshelfView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 28) {
-                    ForEach(store.books) { book in
-                        Button {
-                            selectedBook = book
-                        } label: {
-                            BookCardView(book: book)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(28)
-            }
+            libraryContent
             .navigationTitle("Novels")
             .navigationBarBackButtonHidden()
             .toolbar {
@@ -84,12 +77,12 @@ struct BookshelfView: View {
                 }
             }
 #if os(iOS)
-            .fullScreenCover(item: $selectedBook) { book in
-                ReaderView(book: book)
+            .fullScreenCover(item: $selectedBook) { selection in
+                ReaderView(bookID: selection.id)
             }
 #else
-            .sheet(item: $selectedBook) { book in
-                ReaderView(book: book)
+            .sheet(item: $selectedBook) { selection in
+                ReaderView(bookID: selection.id)
             }
 #endif
             .alert("Import Failed", isPresented: Binding(
@@ -106,7 +99,58 @@ struct BookshelfView: View {
             }, message: {
                 Text(store.importError ?? "")
             })
+            .confirmationDialog(
+                "Remove Book",
+                isPresented: Binding(
+                    get: { pendingRemoval != nil },
+                    set: { isPresented in
+                        if !isPresented {
+                            pendingRemoval = nil
+                        }
+                    }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let book = pendingRemoval {
+                    Button("Remove", role: .destructive) {
+                        if selectedBook?.id == book.id {
+                            selectedBook = nil
+                        }
+                        store.removeBook(id: book.id)
+                        pendingRemoval = nil
+                    }
+                }
+
+                Button("Cancel", role: .cancel) {
+                    pendingRemoval = nil
+                }
+            } message: {
+                Text(
+                    pendingRemoval.map {
+                        "Delete “\($0.title)” from the library and remove its stored EPUB files."
+                    } ?? ""
+                )
+            }
         }
+    }
+
+    private var libraryContent: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 28) {
+                ForEach(store.books) { book in
+                    bookCard(for: book)
+                }
+            }
+            .padding(28)
+        }
+    }
+
+    private func bookCard(for book: BookRecord) -> some View {
+        BookCardView(
+            book: book,
+            onOpen: { selectedBook = ReaderSelection(id: book.id) },
+            onRemove: { pendingRemoval = book }
+        )
     }
 
     private var importButton: some View {
@@ -121,47 +165,80 @@ struct BookshelfView: View {
 
 private struct BookCardView: View {
     let book: BookRecord
+    let onOpen: () -> Void
+    let onRemove: () -> Void
 
     @EnvironmentObject private var store: LibraryStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Group {
-                if let coverURL = store.coverURL(for: book), let image = PlatformImage(contentsOfFile: coverURL.path) {
-                    Image(platformImage: image)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(red: 0.96, green: 0.90, blue: 0.78), Color(red: 0.83, green: 0.89, blue: 0.96)],
-                                startPoint: .top,
-                                endPoint: .bottom
+        Button(action: onOpen) {
+            VStack(alignment: .leading, spacing: 10) {
+                Group {
+                    if let coverURL = store.coverURL(for: book), let image = PlatformImage(contentsOfFile: coverURL.path) {
+                        Image(platformImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color(red: 0.96, green: 0.90, blue: 0.78), Color(red: 0.83, green: 0.89, blue: 0.96)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
                             )
-                        )
-                        .overlay(alignment: .bottomLeading) {
-                            Text(book.title)
-                                .font(.headline)
-                                .lineLimit(4)
-                                .padding(16)
-                        }
+                            .overlay(alignment: .bottomLeading) {
+                                Text(book.title)
+                                    .font(.headline)
+                                    .lineLimit(4)
+                                    .padding(16)
+                                    .foregroundStyle(.black.opacity(0.8))
+                            }
+                    }
                 }
-            }
-            .frame(height: 280)
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
+                .frame(height: 280)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
+                .overlay(alignment: .topTrailing) {
+                    Menu {
+                        Button(role: .destructive, action: onRemove) {
+                            Label("Remove", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.headline.weight(.bold))
+                            .padding(10)
+                            .background(.thinMaterial, in: Circle())
+                    }
+                    .padding(12)
+                }
 
-            Text(book.title)
-                .font(.headline)
-                .multilineTextAlignment(.leading)
-                .lineLimit(2)
+                Text(book.title)
+                    .font(.headline)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
 
-            Text(book.author)
-                .font(.subheadline)
+                Text(book.author)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Label("\(book.chapters.count) chapters", systemImage: "text.book.closed")
+                    Spacer()
+                    if !book.bookmarks.isEmpty {
+                        Label("\(book.bookmarks.count)", systemImage: "bookmark.fill")
+                    }
+                }
+                .font(.caption)
                 .foregroundStyle(.secondary)
+
+                Text(book.progressSummary)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary.opacity(0.72))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .buttonStyle(.plain)
     }
 }
 
