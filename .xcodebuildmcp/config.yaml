@@ -9,6 +9,6 @@ enabledWorkflows:
 sessionDefaults:
   projectPath: "./Yomi.xcodeproj"
   scheme: "Yomi"
-  platform: "macOS"
+  platform: "iOS Simulator"
   simulatorName: "iPhone 17"
   useLatestOS: true

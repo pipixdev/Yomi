@@ -6,16 +6,16 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXFileReference section */
-		4757D6052F84043C0091908D /* Yomi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Yomi.app; sourceTree = BUILT_PRODUCTS_DIR; };
-/* End PBXFileReference section */
-
 /* Begin PBXBuildFile section */
 		A10000012F84043C0091908D /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A10000002F84043C0091908D /* ZIPFoundation */; };
 		A10000032F84043C0091908D /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = A10000022F84043C0091908D /* SwiftSoup */; };
 		A10000052F84043C0091908D /* Mecab-Swift in Frameworks */ = {isa = PBXBuildFile; productRef = A10000042F84043C0091908D /* Mecab-Swift */; };
 		A10000072F84043C0091908D /* IPADic in Frameworks */ = {isa = PBXBuildFile; productRef = A10000062F84043C0091908D /* IPADic */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		4757D6052F84043C0091908D /* Yomi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Yomi.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		4757D6072F84043C0091908D /* Yomi */ = {
@@ -285,7 +285,7 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.7;
@@ -329,7 +329,7 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 15.7;
@@ -351,6 +351,27 @@
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4757D6002F84043C0091908D /* Build configuration list for PBXProject "Yomi" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4757D6102F84043D0091908D /* Debug */,
+				4757D6112F84043D0091908D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4757D6122F84043D0091908D /* Build configuration list for PBXNativeTarget "Yomi" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4757D6132F84043D0091908D /* Debug */,
+				4757D6142F84043D0091908D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		A10000082F84043C0091908D /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
@@ -401,27 +422,6 @@
 			productName = IPADic;
 		};
 /* End XCSwiftPackageProductDependency section */
-
-/* Begin XCConfigurationList section */
-		4757D6002F84043C0091908D /* Build configuration list for PBXProject "Yomi" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				4757D6102F84043D0091908D /* Debug */,
-				4757D6112F84043D0091908D /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		4757D6122F84043D0091908D /* Build configuration list for PBXNativeTarget "Yomi" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				4757D6132F84043D0091908D /* Debug */,
-				4757D6142F84043D0091908D /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-/* End XCConfigurationList section */
 	};
 	rootObject = 4757D5FD2F84043C0091908D /* Project object */;
 }

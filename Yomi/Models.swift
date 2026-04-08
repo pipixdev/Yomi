@@ -121,10 +121,10 @@ struct BookRecord: Identifiable, Codable, Hashable {
             let location = effectiveProgress,
             let chapterIndex = chapterIndex(for: location.chapterID)
         else {
-            return "未开始"
+            return String(localized: "Not started")
         }
 
-        return "第 \(chapterIndex + 1) / \(chapters.count) 章"
+        return String(format: String(localized: "Chapter %lld / %lld"), chapterIndex + 1, chapters.count)
     }
 }
 
