@@ -6,6 +6,8 @@
 import Foundation
 
 struct BookRecord: Identifiable, Codable, Hashable {
+    static let currentImportVersion = 2
+
     let id: UUID
     var title: String
     var author: String
@@ -15,6 +17,7 @@ struct BookRecord: Identifiable, Codable, Hashable {
     var epubRelativePath: String
     var coverRelativePath: String?
     var sourceFingerprint: String?
+    var importVersion: Int
     var pageProgression: PageProgression
     var readingProgress: ReaderLocation?
     var bookmarks: [BookBookmark]
@@ -29,6 +32,7 @@ struct BookRecord: Identifiable, Codable, Hashable {
         epubRelativePath: String,
         coverRelativePath: String? = nil,
         sourceFingerprint: String? = nil,
+        importVersion: Int = BookRecord.currentImportVersion,
         pageProgression: PageProgression = .default,
         readingProgress: ReaderLocation? = nil,
         bookmarks: [BookBookmark] = []
@@ -42,6 +46,7 @@ struct BookRecord: Identifiable, Codable, Hashable {
         self.epubRelativePath = epubRelativePath
         self.coverRelativePath = coverRelativePath
         self.sourceFingerprint = sourceFingerprint
+        self.importVersion = importVersion
         self.pageProgression = pageProgression
         self.readingProgress = readingProgress
         self.bookmarks = bookmarks
@@ -57,6 +62,7 @@ struct BookRecord: Identifiable, Codable, Hashable {
         case epubRelativePath
         case coverRelativePath
         case sourceFingerprint
+        case importVersion
         case pageProgression
         case readingProgress
         case bookmarks
@@ -73,6 +79,7 @@ struct BookRecord: Identifiable, Codable, Hashable {
         epubRelativePath = try container.decode(String.self, forKey: .epubRelativePath)
         coverRelativePath = try container.decodeIfPresent(String.self, forKey: .coverRelativePath)
         sourceFingerprint = try container.decodeIfPresent(String.self, forKey: .sourceFingerprint)
+        importVersion = try container.decodeIfPresent(Int.self, forKey: .importVersion) ?? 1
         pageProgression = try container.decodeIfPresent(PageProgression.self, forKey: .pageProgression) ?? .default
         readingProgress = try container.decodeIfPresent(ReaderLocation.self, forKey: .readingProgress)
         bookmarks = try container.decodeIfPresent([BookBookmark].self, forKey: .bookmarks) ?? []

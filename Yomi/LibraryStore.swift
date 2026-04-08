@@ -33,6 +33,7 @@ final class LibraryStore: ObservableObject {
         }
 
         manifestURL = resolvedManifestURL
+        migrateImportedBooksIfNeeded()
         importAutomationFixtureIfNeeded()
     }
 
@@ -164,6 +165,85 @@ final class LibraryStore: ObservableObject {
         return try decoder.decode([BookRecord].self, from: data)
     }
 
+    private func migrateImportedBooksIfNeeded() {
+        let staleBooks = books.filter { $0.importVersion < BookRecord.currentImportVersion }
+        guard !staleBooks.isEmpty else { return }
+
+        var migratedBooks = books
+        var migrationFailures: [String] = []
+        var didMigrateAtLeastOneBook = false
+
+        for staleBook in staleBooks {
+            guard let index = migratedBooks.firstIndex(where: { $0.id == staleBook.id }) else { continue }
+
+            do {
+                migratedBooks[index] = try migratedCopy(of: staleBook)
+                didMigrateAtLeastOneBook = true
+            } catch {
+                migrationFailures.append(staleBook.title)
+            }
+        }
+
+        if didMigrateAtLeastOneBook {
+            books = migratedBooks
+            do {
+                try persist()
+            } catch {
+                importError = error.localizedDescription
+            }
+        }
+
+        if !migrationFailures.isEmpty {
+            importError = String(
+                localized: "Some books could not be refreshed automatically. Re-import them to rebuild text without embedded ruby."
+            )
+        }
+    }
+
+    private func migratedCopy(of book: BookRecord) throws -> BookRecord {
+        guard let storedEPUBURL = epubURL(for: book), fileManager.fileExists(atPath: storedEPUBURL.path) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let temporaryEPUBURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("\(book.id.uuidString)-migration.epub")
+
+        if fileManager.fileExists(atPath: temporaryEPUBURL.path) {
+            try fileManager.removeItem(at: temporaryEPUBURL)
+        }
+
+        try fileManager.copyItem(at: storedEPUBURL, to: temporaryEPUBURL)
+        defer {
+            try? fileManager.removeItem(at: temporaryEPUBURL)
+        }
+
+        var migratedBook = try importer.import(bookID: book.id, from: temporaryEPUBURL, using: fileManager)
+        migratedBook.importedAt = book.importedAt
+
+        if let progress = book.readingProgress, migratedBook.contains(location: progress) {
+            migratedBook.readingProgress = progress
+        }
+
+        migratedBook.bookmarks = book.bookmarks.compactMap { bookmark in
+            let location = ReaderLocation(
+                chapterID: bookmark.chapterID,
+                paragraphID: bookmark.paragraphID,
+                updatedAt: bookmark.createdAt
+            )
+            guard migratedBook.contains(location: location) else { return nil }
+
+            return BookBookmark(
+                id: bookmark.id,
+                title: bookmarkTitle(in: migratedBook, fallback: bookmark.title, for: location),
+                chapterID: bookmark.chapterID,
+                paragraphID: bookmark.paragraphID,
+                createdAt: bookmark.createdAt
+            )
+        }
+
+        return migratedBook
+    }
+
     private func applicationSupportBaseURL() -> URL? {
         try? fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
     }
@@ -199,5 +279,15 @@ final class LibraryStore: ObservableObject {
 
             try? fileManager.removeItem(at: candidate)
         }
+    }
+
+    private func bookmarkTitle(in book: BookRecord, fallback: String, for location: ReaderLocation) -> String {
+        let chapterTitle = book.chapter(for: location)?.title ?? book.title
+        let paragraphText = book.chapter(for: location)?
+            .paragraphs
+            .first(where: { $0.id == location.paragraphID })?
+            .text ?? fallback
+        let trimmedParagraph = String(paragraphText.prefix(24))
+        return "\(chapterTitle) · \(trimmedParagraph)"
     }
 }

@@ -26,6 +26,11 @@ struct ReaderView: View {
     @State private var currentLocation: ReaderLocation?
     @State private var pendingJumpLocation: ReaderLocation?
     @State private var currentPageIndex = 0
+    @State private var paginatedPages: [ReaderPage] = []
+    @State private var contentAreaSize: CGSize = .zero
+    @State private var isPaginationReady = false
+    @State private var paginationProgress: Double = 0
+    @State private var draggingPageIndex: Int?
 
     private var book: BookRecord? {
         store.book(id: bookID)
@@ -55,6 +60,10 @@ struct ReaderView: View {
         colorScheme == .dark ? .white.opacity(0.72) : .black.opacity(0.64)
     }
 
+    private var tintColor: Color {
+        Color(red: 0.39, green: 0.80, blue: 0.98)
+    }
+
     private var tertiaryTextColor: Color {
         colorScheme == .dark ? .white.opacity(0.55) : .black.opacity(0.50)
     }
@@ -71,7 +80,7 @@ struct ReaderView: View {
                 )
             }
         }
-        .tint(Color(red: 0.36, green: 0.87, blue: 0.56))
+        .tint(tintColor)
         .sheet(isPresented: $isNavigatorVisible) {
             if let book {
                 ReaderNavigatorSheet(
@@ -87,20 +96,41 @@ struct ReaderView: View {
     }
 
     private func readerBody(for book: BookRecord) -> some View {
-        GeometryReader { geometry in
-            let pages = ReaderPagination.pages(
+        let pages: [ReaderPage]
+        if isPaginationReady, contentAreaSize.height > 0 {
+            pages = ReaderPagination.pages(
                 for: book,
-                viewportSize: geometry.size,
+                viewportSize: contentAreaSize,
                 fontScale: fontScale,
-                showsRubyAnnotations: isRubyAnnotationsEnabled
+                showsRubyAnnotations: isRubyAnnotationsEnabled,
+                showsSyntaxAnnotations: isSyntaxAnnotationsEnabled
             )
-            let effectivePageIndex = min(max(currentPageIndex, 0), max(pages.count - 1, 0))
-            let currentPage = pages[safe: effectivePageIndex]
+        } else {
+            pages = []
+        }
+        let effectivePageIndex = min(max(currentPageIndex, 0), max(pages.count - 1, 0))
+        let currentPage = pages[safe: effectivePageIndex]
 
-            NavigationStack {
-                Group {
-                    if let currentPage {
-                        ScrollView {
+        return NavigationStack {
+            VStack(spacing: 0) {
+                // ── Content area ──
+                // Color.clear naturally fills remaining space without
+                // expanding beyond what the VStack offers.
+                Color.clear
+                    .overlay(alignment: .topLeading) {
+                        if !isPaginationReady || contentAreaSize.height <= 0 {
+                            // Loading state with progress bar
+                            VStack(spacing: 16) {
+                                ProgressView(value: paginationProgress) {
+                                    Text("Preparing pages…")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .progressViewStyle(.linear)
+                                .padding(.horizontal, 40)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else if let currentPage {
                             VStack(alignment: .leading, spacing: 18) {
                                 if currentPage.showsChapterHeader,
                                    let chapter = book.chapters[safe: currentPage.chapterIndex] {
@@ -115,100 +145,128 @@ struct ReaderView: View {
                                         showsRubyAnnotations: isRubyAnnotationsEnabled
                                     )
                                     .padding(.horizontal, 20)
-                                    .onAppear {
-                                        syncVisibleLocation(
-                                            ReaderLocation(
-                                                chapterID: currentPage.chapterID,
-                                                paragraphID: paragraph.id,
-                                                updatedAt: .now
-                                            ),
-                                            for: book
-                                        )
-                                    }
                                 }
+
+                                Spacer(minLength: 0)
                             }
                             .padding(.vertical, 22)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .id(currentPage.id)
+                        } else if contentAreaSize.height > 0 {
+                            ContentUnavailableView(
+                                "Book unavailable",
+                                systemImage: "book.closed",
+                                description: Text("This book may have been removed from your library.")
+                            )
                         }
-                        .id(currentPage.id)
-                    } else {
-                        ContentUnavailableView(
-                            "Book unavailable",
-                            systemImage: "book.closed",
-                            description: Text("This book may have been removed from your library.")
-                        )
                     }
-                }
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 24)
-                        .onEnded { value in
-                            guard abs(value.translation.width) > abs(value.translation.height),
-                                  abs(value.translation.width) > 80 else { return }
-                            if value.translation.width < 0 {
-                                goToAdjacentPage(in: pages, direction: 1)
-                            } else {
-                                goToAdjacentPage(in: pages, direction: -1)
-                            }
+                    .clipped()
+                    .background(pageBackgroundColor)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: ContentSizeKey.self, value: geo.size)
                         }
-                )
-                .background(pageBackgroundColor)
-                .safeAreaInset(edge: .bottom) {
-                    bottomControlBar(book: book, pages: pages)
-                }
-#if !os(macOS)
-                .safeAreaInset(edge: .top) {
-                    topBar(book: book)
-                }
-#endif
-                .navigationTitle("")
-#if !os(macOS)
-                .navigationBarTitleDisplayMode(.inline)
-#endif
-                .toolbar {
-#if os(macOS)
-                    ToolbarItem {
-                        closeButton
-                    }
-
-                    ToolbarItemGroup {
-                        topActionButtons(book: book)
-                    }
-#endif
-                }
-                .task(id: book.id) {
-                    guard !hasPerformedInitialScroll else { return }
-                    let target = currentLocation ?? book.effectiveProgress ?? book.firstLocation
-                    currentLocation = target
-                    if let target, let pageIndex = pageIndex(containing: target, pages: pages) {
-                        currentPageIndex = pageIndex
-                    }
-                    hasPerformedInitialScroll = true
-                }
-                .onChange(of: fontScale) { _, _ in
-                    clampCurrentPageIndex(to: pages)
-                }
-                .onChange(of: isRubyAnnotationsEnabled) { _, _ in
-                    clampCurrentPageIndex(to: pages)
-                }
-                .onChange(of: currentLocation) { _, newValue in
-                    guard let newValue else { return }
-                    store.updateProgress(for: book.id, location: newValue)
-                }
-                .onChange(of: pendingJumpLocation) { _, newValue in
-                    guard let newValue else { return }
-                    if let pageIndex = pageIndex(containing: newValue, pages: pages) {
-                        currentPageIndex = pageIndex
-                        currentLocation = newValue
-                    }
-                    pendingJumpLocation = nil
-                }
-                .onChange(of: effectivePageIndex) { _, newValue in
-                    guard let page = pages[safe: newValue] else { return }
-                    currentLocation = ReaderLocation(
-                        chapterID: page.chapterID,
-                        paragraphID: page.startParagraphID,
-                        updatedAt: .now
                     )
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 24)
+                            .onEnded { value in
+                                guard abs(value.translation.width) > abs(value.translation.height),
+                                      abs(value.translation.width) > 80 else { return }
+                                if value.translation.width < 0 {
+                                    goToAdjacentPage(in: pages, direction: 1)
+                                } else {
+                                    goToAdjacentPage(in: pages, direction: -1)
+                                }
+                            }
+                    )
+
+                // ── Bottom bar ──
+                bottomControlBar(book: book, pages: pages)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .background(pageBackgroundColor)
+            .onPreferenceChange(ContentSizeKey.self) { size in
+                if size != contentAreaSize {
+                    contentAreaSize = size
+                }
+            }
+            .task(id: book.id) {
+                guard !hasPerformedInitialScroll else { return }
+                let target = currentLocation ?? book.effectiveProgress ?? book.firstLocation
+                currentLocation = target
+                hasPerformedInitialScroll = true
+            }
+            .task(id: PaginationTrigger(
+                bookID: book.id,
+                contentWidth: contentAreaSize.width,
+                fontScale: fontScale,
+                ruby: isRubyAnnotationsEnabled,
+                syntax: isSyntaxAnnotationsEnabled
+            )) {
+                guard contentAreaSize.height > 0 else { return }
+                isPaginationReady = false
+                paginationProgress = 0
+                await ReaderPagination.precomputeHeights(
+                    for: book,
+                    contentWidth: max(220, contentAreaSize.width - 40),
+                    fontScale: fontScale,
+                    showsRubyAnnotations: isRubyAnnotationsEnabled,
+                    showsSyntaxAnnotations: isSyntaxAnnotationsEnabled,
+                    onProgress: { progress in
+                        paginationProgress = progress
+                    }
+                )
+                isPaginationReady = true
+                // Recompute pages and clamp page index to preserve reading position.
+                let newPages = ReaderPagination.pages(
+                    for: book,
+                    viewportSize: contentAreaSize,
+                    fontScale: fontScale,
+                    showsRubyAnnotations: isRubyAnnotationsEnabled,
+                    showsSyntaxAnnotations: isSyntaxAnnotationsEnabled
+                )
+                clampCurrentPageIndex(to: newPages)
+                // Perform initial scroll if needed.
+                if !hasPerformedInitialScroll {
+                    // Already handled by other .task(id: book.id)
+                } else if let location = currentLocation,
+                          let idx = pageIndex(containing: location, pages: newPages) {
+                    currentPageIndex = idx
+                }
+            }
+            .onChange(of: currentLocation) { _, newValue in
+                guard let newValue else { return }
+                store.updateProgress(for: book.id, location: newValue)
+            }
+            .onChange(of: pendingJumpLocation) { _, newValue in
+                guard let newValue else { return }
+                if let idx = pageIndex(containing: newValue, pages: pages) {
+                    currentPageIndex = idx
+                    currentLocation = newValue
+                }
+                pendingJumpLocation = nil
+            }
+            .onChange(of: effectivePageIndex) { _, newValue in
+                guard let page = pages[safe: newValue] else { return }
+                currentLocation = ReaderLocation(
+                    chapterID: page.chapterID,
+                    paragraphID: page.startParagraphID,
+                    updatedAt: .now
+                )
+            }
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(primaryTextColor)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -227,99 +285,8 @@ struct ReaderView: View {
         .padding(.horizontal, 20)
     }
 
-    private var closeButton: some View {
-        Button {
-            dismiss()
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(Color(red: 0.30, green: 0.86, blue: 0.53))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Close Reader")
-    }
-
-#if !os(macOS)
-    private func topBar(book: BookRecord) -> some View {
-        HStack {
-            closeButton
-            Spacer()
-            topActionButtons(book: book)
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 4)
-        .padding(.bottom, 10)
-        .background(chromeBackgroundColor)
-    }
-#endif
-
-    private func topActionButtons(book: BookRecord) -> some View {
-        HStack(spacing: 14) {
-            Button {
-                isNavigatorVisible = true
-            } label: {
-                Image(systemName: "list.bullet.rectangle.portrait")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(Color(red: 0.30, green: 0.86, blue: 0.53))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open Navigator")
-
-            if let epubURL = store.epubURL(for: book) {
-                ShareLink(item: epubURL) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(Color(red: 0.30, green: 0.86, blue: 0.53))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Share EPUB")
-            }
-
-            bookmarkButton(book: book)
-        }
-    }
-
-    private func bookmarkButton(book: BookRecord) -> some View {
-        let location = currentLocation ?? book.effectiveProgress
-        let isBookmarked = location.flatMap(book.bookmark(for:)) != nil
-
-        return Button {
-            guard let location else { return }
-            store.toggleBookmark(
-                for: book.id,
-                location: location,
-                title: bookmarkTitle(in: book, for: location)
-            )
-        } label: {
-            Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(Color(red: 0.30, green: 0.86, blue: 0.53))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Toggle Bookmark")
-    }
-
     private func bottomControlBar(book: BookRecord, pages: [ReaderPage]) -> some View {
         VStack(spacing: 10) {
-            if isFontPanelVisible {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Font Size")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(primaryTextColor)
-                        Spacer()
-                        Text("\(Int(fontScale * 100))%")
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(secondaryTextColor)
-                    }
-
-                    Slider(value: $fontScale, in: 0.5 ... 1.4, step: 0.05)
-                        .tint(Color(red: 0.39, green: 0.80, blue: 0.98))
-                }
-                .padding(14)
-                .background(floatingPanelBackgroundColor, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-
             VStack(spacing: 10) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
@@ -353,31 +320,38 @@ struct ReaderView: View {
                 .foregroundStyle(primaryTextColor)
 
                 if !pages.isEmpty {
+                    let displayIndex = draggingPageIndex ?? currentPageIndex
                     VStack(spacing: 6) {
                         HStack {
-                            Text(currentPageTitle(in: book, pages: pages))
+                            Text(currentPageTitle(in: book, pages: pages, at: displayIndex))
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(secondaryTextColor)
                                 .lineLimit(1)
                             Spacer()
-                            Text(pageProgressText(pages: pages))
+                            Text(pageProgressText(pages: pages, at: displayIndex))
                                 .font(.caption.monospacedDigit())
                                 .foregroundStyle(tertiaryTextColor)
                         }
 
                         Slider(
                             value: Binding(
-                                get: { Double(min(max(currentPageIndex, 0), max(pages.count - 1, 0))) },
+                                get: { Double(draggingPageIndex ?? min(max(currentPageIndex, 0), max(pages.count - 1, 0))) },
                                 set: { newValue in
                                     let targetIndex = Int(newValue.rounded())
                                     guard pages.indices.contains(targetIndex) else { return }
-                                    currentPageIndex = targetIndex
+                                    draggingPageIndex = targetIndex
                                 }
                             ),
                             in: 0 ... Double(max(pages.count - 1, 0)),
-                            step: 1
+                            step: 1,
+                            onEditingChanged: { editing in
+                                if !editing, let target = draggingPageIndex {
+                                    currentPageIndex = target
+                                    draggingPageIndex = nil
+                                }
+                            }
                         )
-                        .tint(Color(red: 0.39, green: 0.80, blue: 0.98))
+                        .tint(tintColor)
                     }
                 }
 
@@ -418,6 +392,30 @@ struct ReaderView: View {
             .padding(12)
             .background(controlCardBackgroundColor, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
+        .overlay(alignment: .top) {
+            if isFontPanelVisible {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Font Size")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(primaryTextColor)
+                        Spacer()
+                        Text("\(Int(fontScale * 100))%")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(secondaryTextColor)
+                    }
+
+                    Slider(value: $fontScale, in: 0.5 ... 1.4, step: 0.05)
+                        .tint(tintColor)
+                }
+                .padding(14)
+                .background(floatingPanelBackgroundColor, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(.horizontal, 16)
+                .offset(y: -70)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isFontPanelVisible)
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .padding(.bottom, 10)
@@ -434,26 +432,11 @@ struct ReaderView: View {
             Image(systemName: icon)
                 .font(.system(size: 18, weight: .semibold))
                 .frame(width: 38, height: 38)
-                .background(isActive ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .foregroundStyle(isActive ? Color.accentColor : secondaryTextColor)
+                .background(isActive ? tintColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .foregroundStyle(isActive ? tintColor : secondaryTextColor)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
-    }
-
-    private func syncVisibleLocation(_ location: ReaderLocation, for book: BookRecord) {
-        guard book.contains(location: location) else { return }
-        if let currentLocation,
-           currentLocation.chapterID == location.chapterID,
-           currentLocation.paragraphID == location.paragraphID {
-            return
-        }
-        currentLocation = location
-    }
-
-    private func currentChapter(in book: BookRecord) -> BookChapter? {
-        guard let location = currentLocation ?? book.effectiveProgress else { return book.chapters.first }
-        return book.chapter(for: location)
     }
 
     private func readingSummary(book: BookRecord) -> String {
@@ -473,27 +456,19 @@ struct ReaderView: View {
         )
     }
 
-    private func bookmarkTitle(in book: BookRecord, for location: ReaderLocation) -> String {
-        let chapterTitle = book.chapter(for: location)?.title ?? book.title
-        let paragraphText = book.chapter(for: location)?
-            .paragraphs
-            .first(where: { $0.id == location.paragraphID })?
-            .text ?? chapterTitle
-        let trimmedParagraph = String(paragraphText.prefix(24))
-        return "\(chapterTitle) · \(trimmedParagraph)"
-    }
-
-    private func currentPageTitle(in book: BookRecord, pages: [ReaderPage]) -> String {
-        guard let page = pages[safe: currentPageIndex],
+    private func currentPageTitle(in book: BookRecord, pages: [ReaderPage], at index: Int = -1) -> String {
+        let idx = index >= 0 ? index : currentPageIndex
+        guard let page = pages[safe: idx],
               let chapter = book.chapters[safe: page.chapterIndex] else {
             return book.title
         }
         return chapter.title
     }
 
-    private func pageProgressText(pages: [ReaderPage]) -> String {
+    private func pageProgressText(pages: [ReaderPage], at index: Int = -1) -> String {
+        let idx = index >= 0 ? index : currentPageIndex
         guard !pages.isEmpty else { return "0 / 0" }
-        return "\(currentPageIndex + 1) / \(pages.count)"
+        return "\(idx + 1) / \(pages.count)"
     }
 
     private func goToAdjacentPage(in pages: [ReaderPage], direction: Int) {
@@ -531,23 +506,28 @@ private enum ReaderPagination {
         for book: BookRecord,
         viewportSize: CGSize,
         fontScale: Double,
-        showsRubyAnnotations: Bool
+        showsRubyAnnotations: Bool,
+        showsSyntaxAnnotations: Bool
     ) -> [ReaderPage] {
         let contentWidth = max(220, viewportSize.width - 40)
-        let availableHeight = max(260, viewportSize.height - 250)
+        // viewportSize is the measured content area between top and bottom bars.
+        // Subtract 44pt for the content VStack's vertical padding (22pt top + 22pt bottom).
+        let availableHeight = max(260, viewportSize.height - 44)
         var pages: [ReaderPage] = []
 
         for (chapterIndex, chapter) in book.chapters.enumerated() where !chapter.paragraphs.isEmpty {
             var currentParagraphs: [BookParagraph] = []
+            // Initial height accounts for chapter header + VStack spacing.
             var currentHeight: CGFloat = chapterIndex == 0 ? 92 : 108
             var pageNumberInChapter = 0
 
             for paragraph in chapter.paragraphs {
-                let paragraphHeight = estimatedHeight(
+                let paragraphHeight = cachedHeight(
                     for: paragraph,
                     contentWidth: contentWidth,
                     fontScale: fontScale,
-                    showsRubyAnnotations: showsRubyAnnotations
+                    showsRubyAnnotations: showsRubyAnnotations,
+                    showsSyntaxAnnotations: showsSyntaxAnnotations
                 )
                 let shouldStartNewPage = !currentParagraphs.isEmpty && currentHeight + paragraphHeight > availableHeight
 
@@ -586,6 +566,73 @@ private enum ReaderPagination {
         return pages
     }
 
+    /// Pre-computes and caches heights for all paragraphs in the book.
+    /// Runs the expensive `NSAttributedString.boundingRect` work in a detached task
+    /// and periodically reports progress back on the main actor.
+    @MainActor
+    static func precomputeHeights(
+        for book: BookRecord,
+        contentWidth: CGFloat,
+        fontScale: Double,
+        showsRubyAnnotations: Bool,
+        showsSyntaxAnnotations: Bool,
+        onProgress: @escaping @MainActor (Double) -> Void
+    ) async {
+        // Gather all paragraphs.
+        var allParagraphs: [BookParagraph] = []
+        for chapter in book.chapters {
+            allParagraphs.append(contentsOf: chapter.paragraphs)
+        }
+
+        let total = allParagraphs.count
+        guard total > 0 else { return }
+
+        // Batch size: compute N paragraphs, then hop to main to store + report progress.
+        let batchSize = 20
+        var batchResults: [(ParagraphHeightCache.CacheKey, CGFloat)] = []
+
+        for (index, paragraph) in allParagraphs.enumerated() {
+            try? Task.checkCancellation()
+            if Task.isCancelled { return }
+
+            let key = ParagraphHeightCache.CacheKey(
+                paragraphID: paragraph.id,
+                contentWidth: contentWidth.rounded(),
+                fontScale: fontScale,
+                showsRubyAnnotations: showsRubyAnnotations,
+                showsSyntaxAnnotations: showsSyntaxAnnotations
+            )
+
+            // Skip if already cached.
+            if ParagraphHeightCache.shared.lookup(key: key) != nil {
+                if (index + 1) % batchSize == 0 || index == total - 1 {
+                    onProgress(Double(index + 1) / Double(total))
+                    await Task.yield()
+                }
+                continue
+            }
+
+            let height = computeHeight(
+                for: paragraph,
+                contentWidth: contentWidth,
+                fontScale: fontScale,
+                showsRubyAnnotations: showsRubyAnnotations,
+                showsSyntaxAnnotations: showsSyntaxAnnotations
+            )
+            batchResults.append((key, height))
+
+            if batchResults.count >= batchSize || index == total - 1 {
+                // Store batch and report progress.
+                for (k, h) in batchResults {
+                    ParagraphHeightCache.shared.store(h, for: k)
+                }
+                batchResults.removeAll(keepingCapacity: true)
+                onProgress(Double(index + 1) / Double(total))
+                await Task.yield()
+            }
+        }
+    }
+
     private static func makePage(
         chapterIndex: Int,
         chapterID: String,
@@ -604,25 +651,119 @@ private enum ReaderPagination {
         )
     }
 
-    private static func estimatedHeight(
+    // MARK: - Height measurement with caching
+
+    /// Looks up cached height first; falls back to computing inline.
+    @MainActor
+    private static func cachedHeight(
         for paragraph: BookParagraph,
         contentWidth: CGFloat,
         fontScale: Double,
-        showsRubyAnnotations: Bool
+        showsRubyAnnotations: Bool,
+        showsSyntaxAnnotations: Bool
+    ) -> CGFloat {
+        let key = ParagraphHeightCache.CacheKey(
+            paragraphID: paragraph.id,
+            contentWidth: contentWidth.rounded(),
+            fontScale: fontScale,
+            showsRubyAnnotations: showsRubyAnnotations,
+            showsSyntaxAnnotations: showsSyntaxAnnotations
+        )
+        if let cached = ParagraphHeightCache.shared.lookup(key: key) {
+            return cached
+        }
+        let height = computeHeight(
+            for: paragraph,
+            contentWidth: contentWidth,
+            fontScale: fontScale,
+            showsRubyAnnotations: showsRubyAnnotations,
+            showsSyntaxAnnotations: showsSyntaxAnnotations
+        )
+        ParagraphHeightCache.shared.store(height, for: key)
+        return height
+    }
+
+    /// Pure computation of paragraph height — no caching, no side effects.
+    private static func computeHeight(
+        for paragraph: BookParagraph,
+        contentWidth: CGFloat,
+        fontScale: Double,
+        showsRubyAnnotations: Bool,
+        showsSyntaxAnnotations: Bool
     ) -> CGFloat {
         switch paragraph.role {
         case .heading:
-            let charsPerLine = max(6, Int(contentWidth / max(20, 18 * fontScale)))
-            let lines = max(1, Int(ceil(Double(max(paragraph.text.count, 1)) / Double(charsPerLine))))
-            return CGFloat(lines) * CGFloat(34 * fontScale) + 24
+            return measuredHeadingHeight(text: paragraph.text, contentWidth: contentWidth, fontScale: fontScale)
         case .separator:
             return 44
         case .quote, .body, .listItem:
-            let charsPerLine = max(8, Int(contentWidth / max(14, 17 * fontScale)))
-            let lines = max(1, Int(ceil(Double(max(paragraph.text.count, 1)) / Double(charsPerLine))))
-            let lineHeight = CGFloat(30 * fontScale) + (showsRubyAnnotations ? CGFloat(14 * fontScale) : 0)
-            return CGFloat(lines) * lineHeight + 18
+            return measuredBodyHeight(
+                text: paragraph.text,
+                contentWidth: contentWidth,
+                fontScale: fontScale,
+                showsRubyAnnotations: showsRubyAnnotations,
+                showsSyntaxAnnotations: showsSyntaxAnnotations
+            )
         }
+    }
+
+    /// Measures heading height using NSAttributedString.
+    private static func measuredHeadingHeight(text: String, contentWidth: CGFloat, fontScale: Double) -> CGFloat {
+        let font = PlatformFont.systemFont(ofSize: 26 * fontScale, weight: .bold)
+        let size = (text as NSString).boundingRect(
+            with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font],
+            context: nil
+        ).size
+        // 2pt bottom padding from ParagraphContainerView + 18pt inter-paragraph spacing.
+        return ceil(size.height) + 20
+    }
+
+    /// Measures body/quote/listItem height using NSAttributedString to
+    /// determine line count, then scales to the actual token row height.
+    /// This avoids expensive tokenization while being precise about
+    /// line-breaking (CJK text breaks at any character boundary, matching
+    /// the FlowLayout token-wrapping behavior closely).
+    private static func measuredBodyHeight(
+        text: String,
+        contentWidth: CGFloat,
+        fontScale: Double,
+        showsRubyAnnotations: Bool,
+        showsSyntaxAnnotations: Bool
+    ) -> CGFloat {
+        guard !text.isEmpty else { return 18 }
+
+        let surfaceFont = PlatformFont.systemFont(ofSize: 28 * fontScale, weight: .bold)
+        let fontLineHeight = surfaceFont.lineHeight
+
+        // Measure text height using the same font used for rendering.
+        let measured = (text as NSString).boundingRect(
+            with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: surfaceFont],
+            context: nil
+        ).size
+
+        // Derive line count from the measured height.
+        let lineCount = max(1, Int(ceil(measured.height / fontLineHeight)))
+
+        // Actual token row height — matches TokenView.body exactly.
+        let tokenRowHeight: CGFloat
+        if showsRubyAnnotations {
+            let rubyLineHeight = max(11.0, 12.0 * fontScale)
+            // VStack(spacing: 2) { ruby ; surface }
+            tokenRowHeight = rubyLineHeight + 2 + fontLineHeight
+        } else {
+            tokenRowHeight = fontLineHeight
+        }
+
+        // FlowLayout rowSpacing between lines.
+        let rowSpacing: CGFloat = 10
+        let flowHeight = CGFloat(lineCount) * tokenRowHeight + CGFloat(max(0, lineCount - 1)) * rowSpacing
+
+        // 18pt accounts for ParagraphContainerView spacing / VStack inter-item gap.
+        return flowHeight + 18
     }
 }
 
@@ -637,11 +778,6 @@ private struct ReaderNavigatorSheet: View {
         let id: String
         let point: BookNavigationPoint
         let indent: Int
-    }
-
-    private var currentChapter: BookChapter? {
-        guard let currentLocation else { return book.chapters.first }
-        return book.chapter(for: currentLocation)
     }
 
     private var flattenedContents: [FlattenedPoint] {
@@ -674,57 +810,6 @@ private struct ReaderNavigatorSheet: View {
                                         Image(systemName: "checkmark")
                                             .foregroundStyle(.secondary)
                                     }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if let currentChapter {
-                    Section("Current chapter paragraphs") {
-                        ForEach(Array(currentChapter.paragraphs.enumerated()), id: \.element.id) { index, paragraph in
-                            Button {
-                                select(
-                                    ReaderLocation(
-                                        chapterID: currentChapter.id,
-                                        paragraphID: paragraph.id,
-                                        updatedAt: .now
-                                    )
-                                )
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(String(format: String(localized: "Paragraph %lld"), index + 1))
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.secondary)
-                                    Text(paragraph.text)
-                                        .lineLimit(2)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Section("Bookmarks") {
-                    if book.bookmarks.isEmpty {
-                        Text("No bookmarks yet")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(book.bookmarks) { bookmark in
-                            Button {
-                                select(
-                                    ReaderLocation(
-                                        chapterID: bookmark.chapterID,
-                                        paragraphID: bookmark.paragraphID,
-                                        updatedAt: .now
-                                    )
-                                )
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(bookmark.title)
-                                        .lineLimit(2)
-                                    Text(bookmark.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
                                 }
                             }
                         }
@@ -1004,5 +1089,41 @@ private struct CacheEntry {
 private extension Collection {
     subscript(safe index: Index) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+/// Equatable trigger that drives the precomputation `.task(id:)`.
+private struct PaginationTrigger: Equatable {
+    let bookID: UUID
+    let contentWidth: CGFloat
+    let fontScale: Double
+    let ruby: Bool
+    let syntax: Bool
+}
+
+@MainActor
+private final class ParagraphHeightCache {
+    static let shared = ParagraphHeightCache()
+
+    private var cache: [CacheKey: CGFloat] = [:]
+
+    struct CacheKey: Hashable {
+        let paragraphID: String
+        let contentWidth: CGFloat
+        let fontScale: Double
+        let showsRubyAnnotations: Bool
+        let showsSyntaxAnnotations: Bool
+    }
+
+    func lookup(key: CacheKey) -> CGFloat? { cache[key] }
+    func store(_ height: CGFloat, for key: CacheKey) { cache[key] = height }
+    func invalidateAll() { cache.removeAll() }
+}
+
+private struct ContentSizeKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        if next != .zero { value = next }
     }
 }

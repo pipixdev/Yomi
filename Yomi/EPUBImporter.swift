@@ -119,6 +119,7 @@ struct EPUBImporter {
             let navigationURL = packageDirectory.appendingPathComponent(navigationItem.href)
             let navigationHTML = try loadText(from: navigationURL)
             let document = try SwiftSoup.parse(navigationHTML)
+            try document.select("rt, rp, rtc").remove()
             return try parseNavigationDocument(document, baseHref: navigationItem.href)
         }
 
@@ -157,7 +158,9 @@ struct EPUBImporter {
 
     private func extractChapter(fromHTML html: String, href: String, fallbackTitle: String) throws -> ExtractedChapter {
         let doc = try SwiftSoup.parse(html)
-        try doc.select("script, style, nav, noscript").remove()
+        // EPUB ruby markup should not become part of stored body text because
+        // the reader generates its own annotations from the base text.
+        try doc.select("script, style, nav, noscript, rt, rp, rtc").remove()
 
         guard let body = doc.body() else {
             return ExtractedChapter(
