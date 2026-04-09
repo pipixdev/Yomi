@@ -3,9 +3,18 @@
 //  Yomi
 //
 
-import Combine
 import CryptoKit
 import Foundation
+import Combine
+
+#if canImport(UIKit)
+import UIKit
+#endif
+
+#if canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
+import ReadiumShared
+import ReadiumStreamer
+#endif
 
 @MainActor
 final class LibraryStore: ObservableObject {
@@ -13,17 +22,19 @@ final class LibraryStore: ObservableObject {
     @Published var isImporting = false
     @Published var importError: String?
 
-    private let importer = EPUBImporter()
     private let manifestURL: URL
     private let fileManager: FileManager
-    private var progressPersistTask: Task<Void, Never>?
+
+#if canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
+    private var importer = ReadiumLibraryImporter()
+#endif
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
 
         var resolvedManifestURL: URL
         do {
-            let root = try EPUBImporter.rootURL(using: fileManager)
+            let root = try Self.booksRootURL(using: fileManager)
             resolvedManifestURL = root.deletingLastPathComponent().appendingPathComponent("library.json")
             books = try Self.loadBooks(from: resolvedManifestURL)
         } catch {
@@ -33,8 +44,6 @@ final class LibraryStore: ObservableObject {
         }
 
         manifestURL = resolvedManifestURL
-        migrateImportedBooksIfNeeded()
-        importAutomationFixtureIfNeeded()
     }
 
     func book(id: UUID) -> BookRecord? {
@@ -53,10 +62,16 @@ final class LibraryStore: ObservableObject {
             isImporting = false
         }
 
+#if canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
         do {
             let fingerprint = try fileFingerprint(for: url)
             let existingBook = books.first { $0.sourceFingerprint == fingerprint }
-            let importedBook = try importer.import(bookID: existingBook?.id ?? UUID(), from: url, using: fileManager)
+            let importedBook = try await importer.importBook(
+                bookID: existingBook?.id ?? UUID(),
+                from: url,
+                sourceFingerprint: fingerprint,
+                using: fileManager
+            )
 
             if let existingBook, let existingIndex = books.firstIndex(where: { $0.id == existingBook.id }) {
                 books[existingIndex] = importedBook
@@ -69,6 +84,9 @@ final class LibraryStore: ObservableObject {
         } catch {
             importError = error.localizedDescription
         }
+#else
+        importError = String(localized: "Readium reader is available on iOS only in this build.")
+#endif
     }
 
     func removeBook(id: UUID) {
@@ -83,42 +101,15 @@ final class LibraryStore: ObservableObject {
         }
     }
 
-    func updateProgress(for bookID: UUID, location: ReaderLocation) {
-        guard let index = books.firstIndex(where: { $0.id == bookID }) else { return }
-        guard books[index].contains(location: location) else { return }
-        if let current = books[index].readingProgress,
-           current.chapterID == location.chapterID,
-           current.paragraphID == location.paragraphID {
-            return
-        }
-
-        books[index].readingProgress = location
-        scheduleProgressPersist()
-    }
-
-    func toggleBookmark(for bookID: UUID, location: ReaderLocation, title: String) {
+#if canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
+    func updateReadingProgress(for bookID: UUID, locator: Locator) {
         guard let index = books.firstIndex(where: { $0.id == bookID }) else { return }
 
-        if let bookmarkIndex = books[index].bookmarks.firstIndex(where: {
-            $0.chapterID == location.chapterID && $0.paragraphID == location.paragraphID
-        }) {
-            books[index].bookmarks.remove(at: bookmarkIndex)
-        } else {
-            books[index].bookmarks.insert(
-                BookBookmark(
-                    id: UUID(),
-                    title: title,
-                    chapterID: location.chapterID,
-                    paragraphID: location.paragraphID,
-                    createdAt: .now
-                ),
-                at: 0
-            )
-        }
-
-        progressPersistTask?.cancel()
+        books[index].lastReadLocatorJSON = try? locator.jsonString()
+        books[index].readingProgression = locator.locations.totalProgression ?? locator.locations.progression
         try? persist()
     }
+#endif
 
     func coverURL(for book: BookRecord) -> URL? {
         guard let relativePath = book.coverRelativePath else { return nil }
@@ -130,7 +121,7 @@ final class LibraryStore: ObservableObject {
     }
 
     private func deleteFiles(for book: BookRecord) throws {
-        let folderURL = try EPUBImporter.bookFolderURL(for: book.id, using: fileManager)
+        let folderURL = try Self.bookFolderURL(for: book.id, using: fileManager)
         if fileManager.fileExists(atPath: folderURL.path) {
             try fileManager.removeItem(at: folderURL)
         }
@@ -148,15 +139,6 @@ final class LibraryStore: ObservableObject {
         try data.write(to: manifestURL, options: [.atomic])
     }
 
-    private func scheduleProgressPersist() {
-        progressPersistTask?.cancel()
-        progressPersistTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(800))
-            guard let self, !Task.isCancelled else { return }
-            try? self.persist()
-        }
-    }
-
     private static func loadBooks(from url: URL) throws -> [BookRecord] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         let data = try Data(contentsOf: url)
@@ -165,129 +147,111 @@ final class LibraryStore: ObservableObject {
         return try decoder.decode([BookRecord].self, from: data)
     }
 
-    private func migrateImportedBooksIfNeeded() {
-        let staleBooks = books.filter { $0.importVersion < BookRecord.currentImportVersion }
-        guard !staleBooks.isEmpty else { return }
-
-        var migratedBooks = books
-        var migrationFailures: [String] = []
-        var didMigrateAtLeastOneBook = false
-
-        for staleBook in staleBooks {
-            guard let index = migratedBooks.firstIndex(where: { $0.id == staleBook.id }) else { continue }
-
-            do {
-                migratedBooks[index] = try migratedCopy(of: staleBook)
-                didMigrateAtLeastOneBook = true
-            } catch {
-                migrationFailures.append(staleBook.title)
-            }
-        }
-
-        if didMigrateAtLeastOneBook {
-            books = migratedBooks
-            do {
-                try persist()
-            } catch {
-                importError = error.localizedDescription
-            }
-        }
-
-        if !migrationFailures.isEmpty {
-            importError = String(
-                localized: "Some books could not be refreshed automatically. Re-import them to rebuild text without embedded ruby."
-            )
-        }
+    static func bookFolderURL(for bookID: UUID, using fileManager: FileManager = .default) throws -> URL {
+        let root = try booksRootURL(using: fileManager)
+        return root.appendingPathComponent(bookID.uuidString, isDirectory: true)
     }
 
-    private func migratedCopy(of book: BookRecord) throws -> BookRecord {
-        guard let storedEPUBURL = epubURL(for: book), fileManager.fileExists(atPath: storedEPUBURL.path) else {
-            throw CocoaError(.fileNoSuchFile)
+    static func booksRootURL(using fileManager: FileManager = .default) throws -> URL {
+        let base = try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let root = base.appendingPathComponent("Books", isDirectory: true)
+        if !fileManager.fileExists(atPath: root.path) {
+            try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         }
-
-        let temporaryEPUBURL = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("\(book.id.uuidString)-migration.epub")
-
-        if fileManager.fileExists(atPath: temporaryEPUBURL.path) {
-            try fileManager.removeItem(at: temporaryEPUBURL)
-        }
-
-        try fileManager.copyItem(at: storedEPUBURL, to: temporaryEPUBURL)
-        defer {
-            try? fileManager.removeItem(at: temporaryEPUBURL)
-        }
-
-        var migratedBook = try importer.import(bookID: book.id, from: temporaryEPUBURL, using: fileManager)
-        migratedBook.importedAt = book.importedAt
-
-        if let progress = book.readingProgress, migratedBook.contains(location: progress) {
-            migratedBook.readingProgress = progress
-        }
-
-        migratedBook.bookmarks = book.bookmarks.compactMap { bookmark in
-            let location = ReaderLocation(
-                chapterID: bookmark.chapterID,
-                paragraphID: bookmark.paragraphID,
-                updatedAt: bookmark.createdAt
-            )
-            guard migratedBook.contains(location: location) else { return nil }
-
-            return BookBookmark(
-                id: bookmark.id,
-                title: bookmarkTitle(in: migratedBook, fallback: bookmark.title, for: location),
-                chapterID: bookmark.chapterID,
-                paragraphID: bookmark.paragraphID,
-                createdAt: bookmark.createdAt
-            )
-        }
-
-        return migratedBook
+        return root
     }
 
     private func applicationSupportBaseURL() -> URL? {
         try? fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
     }
+}
 
-    private func documentsBaseURL() -> URL? {
-        try? fileManager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-    }
+#if canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
+private final class ReadiumLibraryImporter {
+    private let httpClient = DefaultHTTPClient()
+    private lazy var assetRetriever = AssetRetriever(httpClient: httpClient)
+    private lazy var publicationOpener = PublicationOpener(
+        parser: DefaultPublicationParser(
+            httpClient: httpClient,
+            assetRetriever: assetRetriever,
+            pdfFactory: DefaultPDFDocumentFactory()
+        )
+    )
 
-    private func importAutomationFixtureIfNeeded() {
-        let candidates = [
-            applicationSupportBaseURL()?.deletingLastPathComponent().appendingPathComponent("AutomationImport.epub"),
-            applicationSupportBaseURL()?.appendingPathComponent("AutomationImport.epub"),
-            documentsBaseURL()?.appendingPathComponent("AutomationImport.epub")
-        ].compactMap { $0 }
+    func importBook(
+        bookID: UUID,
+        from sourceURL: URL,
+        sourceFingerprint: String,
+        using fileManager: FileManager = .default
+    ) async throws -> BookRecord {
+        let folderURL = try LibraryStore.bookFolderURL(for: bookID, using: fileManager)
+        let epubURL = folderURL.appendingPathComponent("book.epub")
 
-        for candidate in candidates where fileManager.fileExists(atPath: candidate.path) {
-            do {
-                let fingerprint = try fileFingerprint(for: candidate)
-                let existingBook = books.first { $0.sourceFingerprint == fingerprint }
-                let importedBook = try importer.import(bookID: existingBook?.id ?? UUID(), from: candidate, using: fileManager)
-
-                if let existingBook, let existingIndex = books.firstIndex(where: { $0.id == existingBook.id }) {
-                    books[existingIndex] = importedBook
-                } else {
-                    books.insert(importedBook, at: 0)
-                }
-
-                books.sort { $0.importedAt > $1.importedAt }
-                try persist()
-            } catch {
-                importError = error.localizedDescription
-            }
-
-            try? fileManager.removeItem(at: candidate)
+        if fileManager.fileExists(atPath: folderURL.path) {
+            try fileManager.removeItem(at: folderURL)
         }
+
+        try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        try fileManager.copyItem(at: sourceURL, to: epubURL)
+
+        guard let absoluteURL = epubURL.anyURL.absoluteURL else {
+            throw CocoaError(.fileReadUnknown)
+        }
+
+        let asset = try await assetRetriever.retrieve(url: absoluteURL).get()
+        let publication = try await publicationOpener.open(
+            asset: asset,
+            allowUserInteraction: false,
+            sender: nil
+        ).get()
+        defer {
+            publication.close()
+        }
+
+        guard publication.conforms(to: .epub) else {
+            throw CocoaError(.fileReadUnsupportedScheme)
+        }
+
+        let coverRelativePath = try await saveCoverIfAvailable(
+            publication: publication,
+            folderURL: folderURL,
+            bookID: bookID,
+            using: fileManager
+        )
+
+        let title = publication.metadata.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackTitle = sourceURL.deletingPathExtension().lastPathComponent
+        let author = publication.metadata.authors.map(\.name).joined(separator: ", ")
+
+        return BookRecord(
+            id: bookID,
+            title: (title?.isEmpty == false ? title! : fallbackTitle),
+            author: author.isEmpty ? String(localized: "Unknown Author") : author,
+            importedAt: .now,
+            epubRelativePath: "Books/\(bookID.uuidString)/book.epub",
+            coverRelativePath: coverRelativePath,
+            sourceFingerprint: sourceFingerprint
+        )
     }
 
-    private func bookmarkTitle(in book: BookRecord, fallback: String, for location: ReaderLocation) -> String {
-        let chapterTitle = book.chapter(for: location)?.title ?? book.title
-        let paragraphText = book.chapter(for: location)?
-            .paragraphs
-            .first(where: { $0.id == location.paragraphID })?
-            .text ?? fallback
-        let trimmedParagraph = String(paragraphText.prefix(24))
-        return "\(chapterTitle) · \(trimmedParagraph)"
+    private func saveCoverIfAvailable(
+        publication: Publication,
+        folderURL: URL,
+        bookID: UUID,
+        using fileManager: FileManager
+    ) async throws -> String? {
+        guard let image = try await publication.cover().get(),
+              let data = image.pngData() else {
+            return nil
+        }
+
+        let coverURL = folderURL.appendingPathComponent("cover.png")
+        if fileManager.fileExists(atPath: coverURL.path) {
+            try fileManager.removeItem(at: coverURL)
+        }
+
+        try data.write(to: coverURL, options: [.atomic])
+        return "Books/\(bookID.uuidString)/cover.png"
     }
 }
+#endif

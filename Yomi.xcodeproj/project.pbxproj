@@ -7,10 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A10000012F84043C0091908D /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A10000002F84043C0091908D /* ZIPFoundation */; };
-		A10000032F84043C0091908D /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = A10000022F84043C0091908D /* SwiftSoup */; };
 		A10000052F84043C0091908D /* Mecab-Swift in Frameworks */ = {isa = PBXBuildFile; productRef = A10000042F84043C0091908D /* Mecab-Swift */; };
 		A10000072F84043C0091908D /* IPADic in Frameworks */ = {isa = PBXBuildFile; productRef = A10000062F84043C0091908D /* IPADic */; };
+		B10000012F84043C0091908D /* ReadiumNavigator in Frameworks */ = {isa = PBXBuildFile; productRef = B10000002F84043C0091908D /* ReadiumNavigator */; };
+		B10000032F84043C0091908D /* ReadiumStreamer in Frameworks */ = {isa = PBXBuildFile; productRef = B10000022F84043C0091908D /* ReadiumStreamer */; };
+		B10000052F84043C0091908D /* ReadiumShared in Frameworks */ = {isa = PBXBuildFile; productRef = B10000042F84043C0091908D /* ReadiumShared */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,10 +31,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A10000012F84043C0091908D /* ZIPFoundation in Frameworks */,
-				A10000032F84043C0091908D /* SwiftSoup in Frameworks */,
 				A10000052F84043C0091908D /* Mecab-Swift in Frameworks */,
 				A10000072F84043C0091908D /* IPADic in Frameworks */,
+				B10000012F84043C0091908D /* ReadiumNavigator in Frameworks */,
+				B10000032F84043C0091908D /* ReadiumStreamer in Frameworks */,
+				B10000052F84043C0091908D /* ReadiumShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -76,10 +78,11 @@
 			);
 			name = Yomi;
 			packageProductDependencies = (
-				A10000002F84043C0091908D /* ZIPFoundation */,
-				A10000022F84043C0091908D /* SwiftSoup */,
 				A10000042F84043C0091908D /* Mecab-Swift */,
 				A10000062F84043C0091908D /* IPADic */,
+				B10000002F84043C0091908D /* ReadiumNavigator */,
+				B10000022F84043C0091908D /* ReadiumStreamer */,
+				B10000042F84043C0091908D /* ReadiumShared */,
 			);
 			productName = Yomi;
 			productReference = 4757D6052F84043C0091908D /* Yomi.app */;
@@ -111,9 +114,8 @@
 			mainGroup = 4757D5FC2F84043C0091908D;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				A10000082F84043C0091908D /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
-				A10000092F84043C0091908D /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 				A100000A2F84043C0091908D /* XCRemoteSwiftPackageReference "Mecab-Swift" */,
+				B10000062F84043C0091908D /* XCRemoteSwiftPackageReference "swift-toolkit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4757D6062F84043C0091908D /* Products */;
@@ -295,13 +297,13 @@
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TARGETED_DEVICE_FAMILY = "1,2";
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Debug;
@@ -339,13 +341,13 @@
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TARGETED_DEVICE_FAMILY = "1,2";
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Release;
@@ -374,22 +376,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		A10000082F84043C0091908D /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.9.19;
-			};
-		};
-		A10000092F84043C0091908D /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/scinfu/SwiftSoup.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.8.3;
-			};
-		};
 		A100000A2F84043C0091908D /* XCRemoteSwiftPackageReference "Mecab-Swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/shinjukunian/Mecab-Swift.git";
@@ -398,19 +384,17 @@
 				kind = branch;
 			};
 		};
+		B10000062F84043C0091908D /* XCRemoteSwiftPackageReference "swift-toolkit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/readium/swift-toolkit.git";
+			requirement = {
+				branch = develop;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		A10000002F84043C0091908D /* ZIPFoundation */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A10000082F84043C0091908D /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
-			productName = ZIPFoundation;
-		};
-		A10000022F84043C0091908D /* SwiftSoup */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A10000092F84043C0091908D /* XCRemoteSwiftPackageReference "SwiftSoup" */;
-			productName = SwiftSoup;
-		};
 		A10000042F84043C0091908D /* Mecab-Swift */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A100000A2F84043C0091908D /* XCRemoteSwiftPackageReference "Mecab-Swift" */;
@@ -420,6 +404,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A100000A2F84043C0091908D /* XCRemoteSwiftPackageReference "Mecab-Swift" */;
 			productName = IPADic;
+		};
+		B10000002F84043C0091908D /* ReadiumNavigator */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B10000062F84043C0091908D /* XCRemoteSwiftPackageReference "swift-toolkit" */;
+			productName = ReadiumNavigator;
+		};
+		B10000022F84043C0091908D /* ReadiumStreamer */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B10000062F84043C0091908D /* XCRemoteSwiftPackageReference "swift-toolkit" */;
+			productName = ReadiumStreamer;
+		};
+		B10000042F84043C0091908D /* ReadiumShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B10000062F84043C0091908D /* XCRemoteSwiftPackageReference "swift-toolkit" */;
+			productName = ReadiumShared;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

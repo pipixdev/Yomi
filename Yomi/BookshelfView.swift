@@ -223,18 +223,14 @@ private struct BookCardView: View {
                     .foregroundStyle(.secondary)
 
                 HStack {
-                    Label("\(book.chapters.count) chapters", systemImage: "text.book.closed")
+                    Label("EPUB", systemImage: "doc.richtext")
                     Spacer()
-                    if !book.bookmarks.isEmpty {
-                        Label("\(book.bookmarks.count)", systemImage: "bookmark.fill")
-                    }
+                    Text(book.progressSummary)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary.opacity(0.72))
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-                Text(book.progressSummary)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary.opacity(0.72))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

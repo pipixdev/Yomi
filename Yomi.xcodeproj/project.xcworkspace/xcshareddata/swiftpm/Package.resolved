@@ -1,6 +1,42 @@
 {
-  "originHash" : "c18f5c902a7fadaeccc84ac5844bb23448836d5d808cf91603c6471396b39cd8",
+  "originHash" : "6408476c014132389a5bb55cb3313b4ab15f1e813de8deb40a73bba42b155397",
   "pins" : [
+    {
+      "identity" : "cryptoswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/krzyzanowskim/CryptoSwift.git",
+      "state" : {
+        "revision" : "e45a26384239e028ec87fbcc788f513b67e10d8f",
+        "version" : "1.9.0"
+      }
+    },
+    {
+      "identity" : "differencekit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ra1028/DifferenceKit.git",
+      "state" : {
+        "revision" : "073b9671ce2b9b5b96398611427a1f929927e428",
+        "version" : "1.3.0"
+      }
+    },
+    {
+      "identity" : "fuzi",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/readium/Fuzi.git",
+      "state" : {
+        "revision" : "347aab158ff8894966ff80469b384bb5337928cd",
+        "version" : "4.0.0"
+      }
+    },
+    {
+      "identity" : "gcdwebserver",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/readium/GCDWebServer.git",
+      "state" : {
+        "revision" : "584db89a4c3c3be27206cce6afde037b2b6e38d8",
+        "version" : "4.0.1"
+      }
+    },
     {
       "identity" : "mecab-swift",
       "kind" : "remoteSourceControl",
@@ -8,6 +44,24 @@
       "state" : {
         "branch" : "master",
         "revision" : "1f096492e37fc05fc2e7304091f54889974c5368"
+      }
+    },
+    {
+      "identity" : "sqlite.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stephencelis/SQLite.swift.git",
+      "state" : {
+        "revision" : "964c300fb0736699ce945c9edb56ecd62eba27a3",
+        "version" : "0.16.0"
+      }
+    },
+    {
+      "identity" : "swift-toolkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/readium/swift-toolkit.git",
+      "state" : {
+        "branch" : "develop",
+        "revision" : "cd653c7f8a09c9802caa03c48307b2f864d3831e"
       }
     },
     {
@@ -20,12 +74,21 @@
       }
     },
     {
+      "identity" : "zip",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/marmelroy/Zip.git",
+      "state" : {
+        "revision" : "67fa55813b9e7b3b9acee9c0ae501def28746d76",
+        "version" : "2.1.2"
+      }
+    },
+    {
       "identity" : "zipfoundation",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/weichsel/ZIPFoundation.git",
+      "location" : "https://github.com/readium/ZIPFoundation.git",
       "state" : {
-        "revision" : "22787ffb59de99e5dc1fbfe80b19c97a904ad48d",
-        "version" : "0.9.20"
+        "revision" : "adb49c8bfe060cc187370b12fa081012a6440b86",
+        "version" : "3.0.1"
       }
     }
   ],
