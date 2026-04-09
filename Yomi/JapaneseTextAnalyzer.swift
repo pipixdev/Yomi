@@ -9,9 +9,9 @@ import IPADic
 import Mecab_Swift
 
 struct JapaneseTextAnalyzer {
-    private let tokenizer: Tokenizer
+    nonisolated(unsafe) private let tokenizer: Tokenizer
 
-    init() {
+    nonisolated init() {
         do {
             tokenizer = try Tokenizer(dictionary: IPADic())
         } catch {
@@ -19,7 +19,7 @@ struct JapaneseTextAnalyzer {
         }
     }
 
-    func tokens(for text: String) -> [ReaderToken] {
+    nonisolated func tokens(for text: String) -> [ReaderToken] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 
@@ -39,17 +39,17 @@ struct JapaneseTextAnalyzer {
         }
     }
 
-    private func normalizedReading(_ reading: String?, fallback: String) -> String? {
+    nonisolated private func normalizedReading(_ reading: String?, fallback: String) -> String? {
         guard let reading, !reading.isEmpty else { return nil }
         return reading == fallback ? nil : reading
     }
 
-    private func normalizedDictionaryForm(_ dictionaryForm: String?, fallback: String) -> String? {
+    nonisolated private func normalizedDictionaryForm(_ dictionaryForm: String?, fallback: String) -> String? {
         guard let dictionaryForm, !dictionaryForm.isEmpty else { return nil }
         return dictionaryForm == fallback ? nil : dictionaryForm
     }
 
-    private func partOfSpeech(for description: String) -> ReaderPartOfSpeech {
+    nonisolated private func partOfSpeech(for description: String) -> ReaderPartOfSpeech {
         switch description.lowercased() {
         case "noun":
             return .noun

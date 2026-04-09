@@ -145,9 +145,18 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             }
 
             let asset = try await readium.assetRetriever.retrieve(url: absoluteURL).get()
+            let rubyPipeline = readium.rubyPipeline
             let publication = try await readium.publicationOpener.open(
                 asset: asset,
                 allowUserInteraction: true,
+                onCreatePublication: { [bookID] manifest, container, _ in
+                    container = JapaneseRubyAnnotatedContainer(
+                        bookID: bookID,
+                        container: container,
+                        htmlHREFs: JapaneseRubyAnnotatedContainer.htmlHREFs(from: manifest),
+                        pipeline: rubyPipeline
+                    )
+                },
                 sender: self
             ).get()
 
@@ -173,7 +182,11 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             let navigator = try EPUBNavigatorViewController(
                 publication: publication,
                 initialLocation: initialLocator,
-                config: EPUBNavigatorViewController.Configuration(preferences: preferences)
+                config: EPUBNavigatorViewController.Configuration(
+                    preferences: preferences,
+                    preloadPreviousPositionCount: 0,
+                    preloadNextPositionCount: 2
+                )
             )
             navigator.delegate = self
 
@@ -234,6 +247,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
 
 private final class ReadiumRuntime {
     let httpClient = DefaultHTTPClient()
+    let rubyPipeline = JapaneseRubyAnnotationPipeline()
     lazy var assetRetriever = AssetRetriever(httpClient: httpClient)
     lazy var publicationOpener = PublicationOpener(
         parser: DefaultPublicationParser(

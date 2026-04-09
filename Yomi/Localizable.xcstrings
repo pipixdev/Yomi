@@ -4,20 +4,8 @@
     "" : {
 
     },
-    "%@ · %lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · %2$lld"
-          }
-        }
-      }
-    },
-    "%lld" : {
-
-    },
     "%lld chapters" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -132,6 +120,7 @@
       }
     },
     "Chapter %lld · Paragraph %lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -148,6 +137,7 @@
       }
     },
     "Chapter %lld / %lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -231,6 +221,7 @@
       }
     },
     "Default font scale" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -313,6 +304,9 @@
         }
       }
     },
+    "EPUB" : {
+
+    },
     "Follow System" : {
       "localizations" : {
         "en" : {
@@ -330,6 +324,7 @@
       }
     },
     "Font Size" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -413,6 +408,9 @@
         }
       }
     },
+    "Japanese segmentation and ruby engine is kept in the app, but not connected to the new reader yet." : {
+
+    },
     "Light" : {
       "localizations" : {
         "en" : {
@@ -430,6 +428,7 @@
       }
     },
     "Navigator" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -480,6 +479,7 @@
       }
     },
     "No table of contents" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -597,6 +597,7 @@
       }
     },
     "Part-of-speech" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -612,10 +613,7 @@
         }
       }
     },
-    "Part-of-speech annotations can be toggled from the reader toolbar." : {
-
-    },
-    "Preparing pages…" : {
+    "Reading is powered by Readium Swift Toolkit." : {
 
     },
     "Remove" : {
@@ -685,6 +683,7 @@
       }
     },
     "Some books could not be refreshed automatically. Re-import them to rebuild text without embedded ruby." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -701,6 +700,7 @@
       }
     },
     "Table of Contents" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
