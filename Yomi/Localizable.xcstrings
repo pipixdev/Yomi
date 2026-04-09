@@ -324,7 +324,6 @@
       }
     },
     "Font Size" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -408,7 +407,7 @@
         }
       }
     },
-    "Japanese segmentation and ruby engine is kept in the app, but not connected to the new reader yet." : {
+    "Japanese segmentation and ruby annotations are injected per resource, and existing ruby markup is preserved." : {
 
     },
     "Light" : {
@@ -579,6 +578,9 @@
         }
       }
     },
+    "Page Margins" : {
+
+    },
     "Paragraph %lld" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -612,6 +614,9 @@
           }
         }
       }
+    },
+    "Reader" : {
+
     },
     "Reading is powered by Readium Swift Toolkit." : {
 

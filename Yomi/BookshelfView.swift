@@ -24,6 +24,11 @@ struct BookshelfView: View {
     @State private var importingFile = false
     @State private var selectedBook: ReaderSelection?
     @State private var pendingRemoval: BookRecord?
+    @State private var showingSettings = false
+
+#if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+#endif
 
     private let columns = [
         GridItem(.adaptive(minimum: 180, maximum: 220), spacing: 28)
@@ -40,6 +45,11 @@ struct BookshelfView: View {
                     importButton
                 }
 #else
+                ToolbarItem(placement: .topBarLeading) {
+                    if horizontalSizeClass == .compact {
+                        settingsButton
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     importButton
                 }
@@ -79,6 +89,9 @@ struct BookshelfView: View {
 #if os(iOS)
             .fullScreenCover(item: $selectedBook) { selection in
                 ReaderView(bookID: selection.id)
+            }
+            .sheet(isPresented: $showingSettings) {
+                ReaderPreferencesView()
             }
 #else
             .sheet(item: $selectedBook) { selection in
@@ -160,6 +173,15 @@ struct BookshelfView: View {
             Image(systemName: "plus")
         }
         .accessibilityLabel("Import EPUB")
+    }
+
+    private var settingsButton: some View {
+        Button {
+            showingSettings = true
+        } label: {
+            Image(systemName: "gearshape")
+        }
+        .accessibilityLabel("Settings")
     }
 }
 
