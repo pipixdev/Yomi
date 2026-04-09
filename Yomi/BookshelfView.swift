@@ -66,9 +66,21 @@ struct BookshelfView: View {
             }
             .overlay(alignment: .center) {
                 if store.isImporting {
-                    ProgressView("Importing EPUB…")
-                        .padding(20)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let fraction = store.importProgressFraction {
+                            ProgressView(value: fraction, total: 1) {
+                                Text(store.importProgressLabel)
+                            } currentValueLabel: {
+                                Text("\(Int((fraction * 100).rounded()))%")
+                                    .monospacedDigit()
+                            }
+                        } else {
+                            ProgressView(store.importProgressLabel)
+                        }
+                    }
+                    .frame(maxWidth: 280, alignment: .leading)
+                    .padding(20)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
             }
             .fileImporter(

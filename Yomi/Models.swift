@@ -11,6 +11,8 @@ struct BookRecord: Identifiable, Codable, Hashable {
     var author: String
     var importedAt: Date
     var epubRelativePath: String
+    var normalizedRelativePath: String?
+    var normalizedVersion: Int?
     var coverRelativePath: String?
     var sourceFingerprint: String?
     var lastReadLocatorJSON: String?
@@ -22,6 +24,8 @@ struct BookRecord: Identifiable, Codable, Hashable {
         author: String,
         importedAt: Date,
         epubRelativePath: String,
+        normalizedRelativePath: String? = nil,
+        normalizedVersion: Int? = nil,
         coverRelativePath: String? = nil,
         sourceFingerprint: String? = nil,
         lastReadLocatorJSON: String? = nil,
@@ -32,6 +36,8 @@ struct BookRecord: Identifiable, Codable, Hashable {
         self.author = author
         self.importedAt = importedAt
         self.epubRelativePath = epubRelativePath
+        self.normalizedRelativePath = normalizedRelativePath
+        self.normalizedVersion = normalizedVersion
         self.coverRelativePath = coverRelativePath
         self.sourceFingerprint = sourceFingerprint
         self.lastReadLocatorJSON = lastReadLocatorJSON
@@ -44,6 +50,8 @@ struct BookRecord: Identifiable, Codable, Hashable {
         case author
         case importedAt
         case epubRelativePath
+        case normalizedRelativePath
+        case normalizedVersion
         case coverRelativePath
         case sourceFingerprint
         case lastReadLocatorJSON
@@ -71,6 +79,8 @@ struct BookRecord: Identifiable, Codable, Hashable {
         author = try container.decode(String.self, forKey: .author)
         importedAt = try container.decode(Date.self, forKey: .importedAt)
         epubRelativePath = try container.decode(String.self, forKey: .epubRelativePath)
+        normalizedRelativePath = try container.decodeIfPresent(String.self, forKey: .normalizedRelativePath)
+        normalizedVersion = try container.decodeIfPresent(Int.self, forKey: .normalizedVersion)
         coverRelativePath = try container.decodeIfPresent(String.self, forKey: .coverRelativePath)
         sourceFingerprint = try container.decodeIfPresent(String.self, forKey: .sourceFingerprint)
         lastReadLocatorJSON = try container.decodeIfPresent(String.self, forKey: .lastReadLocatorJSON)

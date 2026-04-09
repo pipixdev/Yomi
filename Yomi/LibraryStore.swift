@@ -20,6 +20,8 @@ import ReadiumStreamer
 final class LibraryStore: ObservableObject {
     @Published private(set) var books: [BookRecord] = []
     @Published var isImporting = false
+    @Published var importProgressFraction: Double?
+    @Published var importProgressLabel = String(localized: "Importing EPUB…")
     @Published var importError: String?
 
     private let manifestURL: URL
@@ -52,6 +54,8 @@ final class LibraryStore: ObservableObject {
 
     func importBook(from url: URL) async {
         isImporting = true
+        importProgressFraction = 0
+        importProgressLabel = String(localized: "Preparing import…")
         importError = nil
 
         let isSecurityScoped = url.startAccessingSecurityScopedResource()
@@ -59,6 +63,7 @@ final class LibraryStore: ObservableObject {
             if isSecurityScoped {
                 url.stopAccessingSecurityScopedResource()
             }
+            importProgressFraction = nil
             isImporting = false
         }
 
@@ -70,7 +75,13 @@ final class LibraryStore: ObservableObject {
                 bookID: existingBook?.id ?? UUID(),
                 from: url,
                 sourceFingerprint: fingerprint,
-                using: fileManager
+                using: fileManager,
+                progress: { [weak self] fraction, label in
+                    Task { @MainActor [weak self] in
+                        self?.importProgressFraction = fraction
+                        self?.importProgressLabel = label
+                    }
+                }
             )
 
             if let existingBook, let existingIndex = books.firstIndex(where: { $0.id == existingBook.id }) {
@@ -120,6 +131,11 @@ final class LibraryStore: ObservableObject {
         applicationSupportBaseURL()?.appendingPathComponent(book.epubRelativePath)
     }
 
+    func normalizedURL(for book: BookRecord) -> URL? {
+        guard let relativePath = book.normalizedRelativePath else { return nil }
+        return applicationSupportBaseURL()?.appendingPathComponent(relativePath)
+    }
+
     private func deleteFiles(for book: BookRecord) throws {
         let folderURL = try Self.bookFolderURL(for: book.id, using: fileManager)
         if fileManager.fileExists(atPath: folderURL.path) {
@@ -128,8 +144,36 @@ final class LibraryStore: ObservableObject {
     }
 
     private func fileFingerprint(for url: URL) throws -> String {
-        let data = try Data(contentsOf: url)
-        return SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+        guard let stream = InputStream(url: url) else {
+            throw CocoaError(.fileReadUnknown)
+        }
+
+        stream.open()
+        defer {
+            stream.close()
+        }
+
+        var hasher = SHA256()
+        let bufferSize = 64 * 1024
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer {
+            buffer.deallocate()
+        }
+
+        while stream.hasBytesAvailable {
+            let readCount = stream.read(buffer, maxLength: bufferSize)
+            if readCount < 0 {
+                throw stream.streamError ?? CocoaError(.fileReadUnknown)
+            }
+            if readCount == 0 {
+                break
+            }
+
+            hasher.update(bufferPointer: UnsafeRawBufferPointer(start: buffer, count: readCount))
+        }
+
+        let digest = hasher.finalize()
+        return digest.compactMap { String(format: "%02x", $0) }.joined()
     }
 
     private func persist() throws {
@@ -168,6 +212,7 @@ final class LibraryStore: ObservableObject {
 
 #if canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
 private final class ReadiumLibraryImporter {
+    private let normalizer = EPUBImportNormalizer()
     private let httpClient = DefaultHTTPClient()
     private lazy var assetRetriever = AssetRetriever(httpClient: httpClient)
     private lazy var publicationOpener = PublicationOpener(
@@ -182,10 +227,14 @@ private final class ReadiumLibraryImporter {
         bookID: UUID,
         from sourceURL: URL,
         sourceFingerprint: String,
-        using fileManager: FileManager = .default
+        using fileManager: FileManager = .default,
+        progress: @escaping (_ fraction: Double, _ label: String) -> Void
     ) async throws -> BookRecord {
         let folderURL = try LibraryStore.bookFolderURL(for: bookID, using: fileManager)
         let epubURL = folderURL.appendingPathComponent("book.epub")
+        let normalizedFolderURL = folderURL.appendingPathComponent("normalized", isDirectory: true)
+
+        progress(0.05, String(localized: "Copying EPUB…"))
 
         if fileManager.fileExists(atPath: folderURL.path) {
             try fileManager.removeItem(at: folderURL)
@@ -193,11 +242,13 @@ private final class ReadiumLibraryImporter {
 
         try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
         try fileManager.copyItem(at: sourceURL, to: epubURL)
+        try fileManager.createDirectory(at: normalizedFolderURL, withIntermediateDirectories: true)
 
         guard let absoluteURL = epubURL.anyURL.absoluteURL else {
             throw CocoaError(.fileReadUnknown)
         }
 
+        progress(0.15, String(localized: "Parsing publication…"))
         let asset = try await assetRetriever.retrieve(url: absoluteURL).get()
         let publication = try await publicationOpener.open(
             asset: asset,
@@ -212,11 +263,23 @@ private final class ReadiumLibraryImporter {
             throw CocoaError(.fileReadUnsupportedScheme)
         }
 
+        progress(0.25, String(localized: "Extracting cover…"))
         let coverRelativePath = try await saveCoverIfAvailable(
             publication: publication,
             folderURL: folderURL,
             bookID: bookID,
             using: fileManager
+        )
+
+        guard case let .container(containerAsset) = asset else {
+            throw CocoaError(.fileReadUnknown)
+        }
+
+        try await normalizer.normalize(
+            container: containerAsset.container,
+            bookID: bookID,
+            outputDirectory: normalizedFolderURL,
+            progress: progress
         )
 
         let title = publication.metadata.title?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -229,6 +292,8 @@ private final class ReadiumLibraryImporter {
             author: author.isEmpty ? String(localized: "Unknown Author") : author,
             importedAt: .now,
             epubRelativePath: "Books/\(bookID.uuidString)/book.epub",
+            normalizedRelativePath: "Books/\(bookID.uuidString)/normalized",
+            normalizedVersion: EPUBImportNormalizer.version,
             coverRelativePath: coverRelativePath,
             sourceFingerprint: sourceFingerprint
         )

@@ -13,7 +13,6 @@ import UIKit
 import ReadiumNavigator
 import ReadiumShared
 import ReadiumStreamer
-import WebKit
 #endif
 
 struct ReaderView: View {
@@ -33,7 +32,7 @@ struct ReaderView: View {
             if let book, let epubURL = store.epubURL(for: book) {
 #if canImport(ReadiumNavigator) && canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
                 ReadiumReaderContainer(
-                    bookID: book.id,
+                    normalizedURL: store.normalizedURL(for: book),
                     epubURL: epubURL,
                     initialLocatorJSON: book.lastReadLocatorJSON,
                     fontScale: readerFontScale,
@@ -66,7 +65,7 @@ struct ReaderView: View {
 
 #if canImport(ReadiumNavigator) && canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
 private struct ReadiumReaderContainer: UIViewControllerRepresentable {
-    let bookID: UUID
+    let normalizedURL: URL?
     let epubURL: URL
     let initialLocatorJSON: String?
     let fontScale: Double
@@ -76,7 +75,7 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> UINavigationController {
         let controller = ReadiumReaderViewController(
-            bookID: bookID,
+            normalizedURL: normalizedURL,
             epubURL: epubURL,
             initialLocatorJSON: initialLocatorJSON,
             initialFontScale: fontScale,
@@ -96,7 +95,7 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
 }
 
 private final class ReadiumReaderViewController: UIViewController, EPUBNavigatorDelegate, UIGestureRecognizerDelegate {
-    private let bookID: UUID
+    private let normalizedURL: URL?
     private let epubURL: URL
     private let initialLocatorJSON: String?
     private let onClose: () -> Void
@@ -113,7 +112,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     private var hideChromeTask: Task<Void, Never>?
 
     init(
-        bookID: UUID,
+        normalizedURL: URL?,
         epubURL: URL,
         initialLocatorJSON: String?,
         initialFontScale: Double,
@@ -121,7 +120,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         onClose: @escaping () -> Void,
         onLocationChange: @escaping (Locator) -> Void
     ) {
-        self.bookID = bookID
+        self.normalizedURL = normalizedURL
         self.epubURL = epubURL
         self.initialLocatorJSON = initialLocatorJSON
         self.onClose = onClose
@@ -195,23 +194,10 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
 
     private func loadReader() async {
         do {
-            guard let absoluteURL = epubURL.anyURL.absoluteURL else {
-                throw CocoaError(.fileReadUnknown)
-            }
-
-            let asset = try await readium.assetRetriever.retrieve(url: absoluteURL).get()
-            let rubyPipeline = readium.rubyPipeline
+            let asset = try await makeReaderAsset()
             let publication = try await readium.publicationOpener.open(
                 asset: asset,
                 allowUserInteraction: true,
-                onCreatePublication: { [bookID] manifest, container, _ in
-                    container = JapaneseRubyAnnotatedContainer(
-                        bookID: bookID,
-                        container: container,
-                        htmlHREFs: JapaneseRubyAnnotatedContainer.htmlHREFs(from: manifest),
-                        pipeline: rubyPipeline
-                    )
-                },
                 sender: self
             ).get()
 
@@ -251,6 +237,28 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         } catch {
             showError(error.localizedDescription)
         }
+    }
+
+    private func makeReaderAsset() async throws -> Asset {
+        if let normalizedURL {
+            let standardizedURL = normalizedURL.standardizedFileURL
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: standardizedURL.path, isDirectory: &isDirectory),
+               isDirectory.boolValue,
+               let directoryFileURL = FileURL(url: standardizedURL) {
+                let container = try await DirectoryContainer(directory: directoryFileURL)
+                return try await readium.assetRetriever.retrieve(
+                    container: container,
+                    hints: FormatHints(mediaType: .epub)
+                ).get()
+            }
+        }
+
+        guard let absoluteURL = epubURL.anyURL.absoluteURL else {
+            throw CocoaError(.fileReadUnknown)
+        }
+
+        return try await readium.assetRetriever.retrieve(url: absoluteURL).get()
     }
 
     private func embed(_ child: UIViewController) {
@@ -339,25 +347,6 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         true
     }
 
-    func navigator(_ navigator: EPUBNavigatorViewController, setupUserScripts userContentController: WKUserContentController) {
-        let script = """
-        (() => {
-          if (document.getElementById('yomi-layout-fix-style')) return;
-          const style = document.createElement('style');
-          style.id = 'yomi-layout-fix-style';
-          style.textContent = \(javaScriptStringLiteral(Self.layoutFixCSS));
-          document.head.appendChild(style);
-        })();
-        """
-        userContentController.addUserScript(
-            WKUserScript(
-                source: script,
-                injectionTime: .atDocumentEnd,
-                forMainFrameOnly: true
-            )
-        )
-    }
-
     func applyUserPreferences(fontScale: Double, pageMarginsScale: Double) {
         let normalizedFontScale = max(0.7, min(fontScale, 2.2))
         let normalizedMargins = max(0.0, min(pageMarginsScale, 2.5))
@@ -385,56 +374,10 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             verticalText: false
         )
     }
-
-    private func javaScriptStringLiteral(_ text: String) -> String {
-        guard
-            let data = try? JSONSerialization.data(withJSONObject: [text]),
-            let json = String(data: data, encoding: .utf8)
-        else {
-            return "\"\""
-        }
-
-        return String(json.dropFirst().dropLast())
-    }
-
-    private static let layoutFixCSS = """
-    html, body {
-      max-width: 100% !important;
-      overflow-x: hidden !important;
-      box-sizing: border-box !important;
-    }
-
-    h1, h2, h3, h4, h5, h6 {
-      max-width: 100% !important;
-      box-sizing: border-box !important;
-      overflow-wrap: anywhere !important;
-      word-break: break-word !important;
-      margin-left: 0 !important;
-      margin-right: 0 !important;
-    }
-
-    p, div, section, article, header, main, blockquote, li {
-      max-width: 100% !important;
-      box-sizing: border-box !important;
-      overflow-wrap: anywhere !important;
-      word-break: break-word !important;
-    }
-
-    img, svg, video, canvas, table, pre, code {
-      max-width: 100% !important;
-      box-sizing: border-box !important;
-    }
-
-    table {
-      display: block !important;
-      overflow-x: auto !important;
-    }
-    """
 }
 
 private final class ReadiumRuntime {
     let httpClient = DefaultHTTPClient()
-    let rubyPipeline = JapaneseRubyAnnotationPipeline()
     lazy var assetRetriever = AssetRetriever(httpClient: httpClient)
     lazy var publicationOpener = PublicationOpener(
         parser: DefaultPublicationParser(
