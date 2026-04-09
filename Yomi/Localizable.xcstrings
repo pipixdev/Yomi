@@ -170,6 +170,9 @@
         }
       }
     },
+    "Copying EPUB…" : {
+
+    },
     "Current chapter paragraphs" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -305,6 +308,12 @@
       }
     },
     "EPUB" : {
+
+    },
+    "Extracting cover…" : {
+
+    },
+    "Finishing import…" : {
 
     },
     "Follow System" : {
@@ -494,6 +503,9 @@
         }
       }
     },
+    "Normalizing book content…" : {
+
+    },
     "Not started" : {
       "localizations" : {
         "en" : {
@@ -598,6 +610,9 @@
         }
       }
     },
+    "Parsing publication…" : {
+
+    },
     "Part-of-speech" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -614,6 +629,9 @@
           }
         }
       }
+    },
+    "Preparing import…" : {
+
     },
     "Reader" : {
 

@@ -13,6 +13,7 @@ import UIKit
 import ReadiumNavigator
 import ReadiumShared
 import ReadiumStreamer
+import WebKit
 #endif
 
 struct ReaderView: View {
@@ -347,6 +348,16 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         true
     }
 
+    func navigator(_ navigator: EPUBNavigatorViewController, setupUserScripts userContentController: WKUserContentController) {
+        userContentController.addUserScript(
+            WKUserScript(
+                source: Self.paragraphActionsScript,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            )
+        )
+    }
+
     func applyUserPreferences(fontScale: Double, pageMarginsScale: Double) {
         let normalizedFontScale = max(0.7, min(fontScale, 2.2))
         let normalizedMargins = max(0.0, min(pageMarginsScale, 2.5))
@@ -374,6 +385,119 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             verticalText: false
         )
     }
+
+    private static let paragraphActionsScript = """
+    (() => {
+      const SLOT_SELECTOR = '.yomi-paragraph-slot';
+      const TOOLBAR_CLASS = 'yomi-paragraph-toolbar';
+      const BUTTON_CLASS = 'yomi-paragraph-action';
+
+      const actions = [
+        {
+          id: 'copy',
+          icon: '⧉',
+          label: 'Copy paragraph',
+          perform: async (slot, button) => {
+            const text = (slot.dataset.yomiParagraphText || '').trim();
+            if (!text) return false;
+
+            const copyWithClipboardApi = async () => {
+              if (!navigator.clipboard || !navigator.clipboard.writeText) return false;
+              try {
+                await navigator.clipboard.writeText(text);
+                return true;
+              } catch {
+                return false;
+              }
+            };
+
+            const copyWithSelectionFallback = () => {
+              const textarea = document.createElement('textarea');
+              textarea.value = text;
+              textarea.setAttribute('readonly', 'readonly');
+              textarea.style.position = 'fixed';
+              textarea.style.opacity = '0';
+              textarea.style.pointerEvents = 'none';
+              document.body.appendChild(textarea);
+              textarea.focus();
+              textarea.select();
+              let copied = false;
+              try {
+                copied = document.execCommand('copy');
+              } catch {
+                copied = false;
+              }
+              textarea.remove();
+              return copied;
+            };
+
+            const copied = await copyWithClipboardApi() || copyWithSelectionFallback();
+            if (copied) {
+              button.classList.add('is-feedback');
+              window.setTimeout(() => button.classList.remove('is-feedback'), 900);
+            }
+            return copied;
+          }
+        }
+      ];
+
+      const buildButton = (action, slot) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = BUTTON_CLASS;
+        button.dataset.yomiAction = action.id;
+        button.textContent = action.icon;
+        button.setAttribute('aria-label', action.label);
+        button.setAttribute('title', action.label);
+        button.addEventListener('click', async event => {
+          event.preventDefault();
+          event.stopPropagation();
+          await action.perform(slot, button);
+        });
+        return button;
+      };
+
+      const hydrateSlot = slot => {
+        if (slot.dataset.yomiActionsBound === '1') return;
+        slot.dataset.yomiActionsBound = '1';
+
+        const toolbar = document.createElement('div');
+        toolbar.className = TOOLBAR_CLASS;
+        for (const action of actions) {
+          toolbar.appendChild(buildButton(action, slot));
+        }
+        slot.replaceChildren(toolbar);
+      };
+
+      const hydrateTree = root => {
+        if (root.matches && root.matches(SLOT_SELECTOR)) {
+          hydrateSlot(root);
+        }
+        if (!root.querySelectorAll) return;
+        root.querySelectorAll(SLOT_SELECTOR).forEach(hydrateSlot);
+      };
+
+      const bootstrap = () => {
+        hydrateTree(document);
+        const observer = new MutationObserver(mutations => {
+          for (const mutation of mutations) {
+            mutation.addedNodes.forEach(node => {
+              if (node.nodeType === Node.ELEMENT_NODE) {
+                hydrateTree(node);
+              }
+            });
+          }
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+      };
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootstrap, { once: true });
+      } else {
+        bootstrap();
+      }
+    })();
+    """
 }
 
 private final class ReadiumRuntime {

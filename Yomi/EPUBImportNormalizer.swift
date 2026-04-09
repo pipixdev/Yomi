@@ -10,7 +10,7 @@ import ReadiumShared
 import ReadiumStreamer
 
 final class EPUBImportNormalizer {
-    static let version = 1
+    static let version = 2
 
     private let rubyPipeline = JapaneseRubyAnnotationPipeline()
 
@@ -59,6 +59,7 @@ final class EPUBImportNormalizer {
         normalized = Self.removeHeadStyles(from: normalized)
         normalized = Self.removeInlineStyles(from: normalized)
         normalized = Self.promoteLeadingHeadingCandidate(in: normalized)
+        normalized = Self.injectParagraphActionSlots(into: normalized)
         normalized = Self.injectNormalizedStyle(into: normalized)
         return await rubyPipeline.annotate(html: normalized, bookID: bookID, href: href)
     }
@@ -239,6 +240,42 @@ final class EPUBImportNormalizer {
           margin-top: 0 !important;
           margin-bottom: 1em !important;
         }
+        .yomi-paragraph-slot {
+          display: flex !important;
+          justify-content: flex-end !important;
+          align-items: center !important;
+          min-height: 1.35em !important;
+          margin: -0.2em 0 1em 0 !important;
+          padding: 0 !important;
+          text-indent: 0 !important;
+        }
+        .yomi-paragraph-toolbar {
+          display: flex !important;
+          flex-wrap: nowrap !important;
+          justify-content: flex-end !important;
+          align-items: center !important;
+          gap: 0.4em !important;
+          width: 100% !important;
+        }
+        .yomi-paragraph-action {
+          display: inline-flex !important;
+          justify-content: center !important;
+          align-items: center !important;
+          width: 2em !important;
+          height: 2em !important;
+          border: 0 !important;
+          border-radius: 999px !important;
+          background: rgba(60, 60, 67, 0.12) !important;
+          color: inherit !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          line-height: 1 !important;
+          font: inherit !important;
+          cursor: pointer !important;
+        }
+        .yomi-paragraph-action.is-feedback {
+          background: rgba(52, 199, 89, 0.24) !important;
+        }
         img, svg, video, canvas {
           display: block !important;
           max-width: 100% !important;
@@ -266,6 +303,68 @@ final class EPUBImportNormalizer {
         return styleTag + html
     }
 
+    private static func injectParagraphActionSlots(into html: String) -> String {
+        guard
+            let bodyStart = html.range(of: "<body", options: .caseInsensitive),
+            let bodyContentStart = html[bodyStart.upperBound...].firstIndex(of: ">"),
+            let bodyEnd = html.range(of: "</body>", options: .caseInsensitive)?.lowerBound
+        else {
+            return html
+        }
+
+        let scanRange = html.index(after: bodyContentStart)..<bodyEnd
+        let scanText = String(html[scanRange])
+        let regex = try? NSRegularExpression(pattern: #"(?is)<(p|h[1-6]|blockquote)\b([^>]*)>(.*?)</\1>"#)
+        guard let regex else {
+            return html
+        }
+
+        let matches = regex.matches(
+            in: scanText,
+            options: [],
+            range: NSRange(scanText.startIndex..<scanText.endIndex, in: scanText)
+        )
+
+        guard !matches.isEmpty else {
+            return html
+        }
+
+        var updatedHTML = html
+
+        for match in matches.reversed() {
+            guard
+                let fullRange = Range(match.range(at: 0), in: scanText),
+                let innerRange = Range(match.range(at: 3), in: scanText)
+            else {
+                continue
+            }
+
+            let originalBlockHTML = String(scanText[fullRange])
+            if originalBlockHTML.contains("yomi-paragraph-slot") {
+                continue
+            }
+
+            let innerHTML = String(scanText[innerRange])
+            let cleanText = cleanParagraphText(from: innerHTML)
+            guard !cleanText.isEmpty else {
+                continue
+            }
+
+            let slotHTML = """
+            <div class="yomi-paragraph-slot" data-yomi-paragraph-text="\(htmlAttributeEscaped(cleanText))"></div>
+            """
+
+            let fullHTMLEnd = updatedHTML.index(
+                scanRange.lowerBound,
+                offsetBy: scanText.distance(from: scanText.startIndex, to: fullRange.upperBound)
+            )
+
+            updatedHTML.insert(contentsOf: slotHTML, at: fullHTMLEnd)
+        }
+
+        return updatedHTML
+    }
+
     private static func replacing(pattern: String, in text: String, with replacement: String) -> String {
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             return text
@@ -273,6 +372,36 @@ final class EPUBImportNormalizer {
 
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: replacement)
+    }
+
+    private static func cleanParagraphText(from html: String) -> String {
+        let withoutRubyNotes = replacing(
+            pattern: #"(?is)<rt\b[^>]*>.*?</rt>|<rp\b[^>]*>.*?</rp>"#,
+            in: html,
+            with: ""
+        )
+        let withoutRubyWrappers = replacing(
+            pattern: #"(?is)</?(ruby|rb)\b[^>]*>"#,
+            in: withoutRubyNotes,
+            with: ""
+        )
+        let collapsed = plainText(from: withoutRubyWrappers)
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+
+        return collapsed.replacingOccurrences(
+            of: #"\s+"#,
+            with: " ",
+            options: .regularExpression
+        )
+    }
+
+    private static func htmlAttributeEscaped(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
     }
 }
 #endif
