@@ -335,18 +335,31 @@ private struct JapaneseRubyHTMLAnnotator {
         output.reserveCapacity(segment.utf8.count + (segment.utf8.count / 2))
 
         for token in tokens {
-            if shouldAnnotate(token), let reading = token.reading {
-                output += #"<ruby class="yomi-ruby"><rb>"#
-                output += token.surface
-                output += #"</rb><rt class="yomi-rt">"#
-                output += escapeHTML(reading)
-                output += "</rt></ruby>"
-            } else {
-                output += token.surface
-            }
+            output += annotatedHTML(for: token) ?? token.surface
         }
 
         return output
+    }
+
+    nonisolated private func annotatedHTML(for token: ReaderToken) -> String? {
+        guard shouldAnnotate(token), let reading = token.reading else {
+            return nil
+        }
+
+        if token.surface.allSatisfy(\.isKanjiLike) {
+            return rubyHTML(base: token.surface, reading: reading)
+        }
+
+        guard let segments = alignRubySegments(surface: Array(token.surface), reading: Array(reading)) else {
+            return nil
+        }
+
+        return segments.map { segment in
+            if let reading = segment.reading {
+                return rubyHTML(base: segment.surface, reading: reading)
+            }
+            return segment.surface
+        }.joined()
     }
 
     nonisolated private func shouldAnnotate(_ token: ReaderToken) -> Bool {
@@ -357,6 +370,87 @@ private struct JapaneseRubyHTMLAnnotator {
         return token.surface.containsKanji
     }
 
+    nonisolated private func rubyHTML(base: String, reading: String) -> String {
+        #"<ruby class="yomi-ruby"><rb>"#
+            + escapeHTML(base)
+            + #"</rb><rt class="yomi-rt">"#
+            + escapeHTML(reading)
+            + "</rt></ruby>"
+    }
+
+    nonisolated private func alignRubySegments(surface: [Character], reading: [Character]) -> [RubySegment]? {
+        guard !surface.isEmpty else {
+            return reading.isEmpty ? [] : nil
+        }
+
+        if surface.allSatisfy(\.isKanjiLike) {
+            guard !reading.isEmpty else { return nil }
+            return [RubySegment(surface: String(surface), reading: String(reading))]
+        }
+
+        let first = surface[0]
+        if first.isKanaLike {
+            guard !reading.isEmpty, first.matchesKana(reading[0]) else {
+                return nil
+            }
+
+            guard let suffix = alignRubySegments(surface: Array(surface.dropFirst()), reading: Array(reading.dropFirst())) else {
+                return nil
+            }
+            return [RubySegment(surface: String(first), reading: nil)] + suffix
+        }
+
+        var anchorStart: Int?
+        for index in surface.indices {
+            if surface[index].isKanaLike {
+                anchorStart = index
+                break
+            }
+        }
+
+        guard let anchorStart else {
+            guard !reading.isEmpty else { return nil }
+            return [RubySegment(surface: String(surface), reading: String(reading))]
+        }
+
+        var anchorEnd = anchorStart
+        while anchorEnd < surface.count, surface[anchorEnd].isKanaLike {
+            anchorEnd += 1
+        }
+
+        let kanjiPrefix = String(surface[..<anchorStart])
+        let anchor = Array(surface[anchorStart..<anchorEnd])
+        let suffixSurface = Array(surface[anchorEnd...])
+
+        for matchStart in reading.indices where matchStart + anchor.count <= reading.count {
+            let readingAnchor = Array(reading[matchStart..<(matchStart + anchor.count)])
+            guard kanaSlicesMatch(anchor, readingAnchor) else {
+                continue
+            }
+
+            let rubyReading = String(reading[..<matchStart])
+            guard !rubyReading.isEmpty else {
+                continue
+            }
+
+            guard let suffix = alignRubySegments(surface: suffixSurface, reading: Array(reading[(matchStart + anchor.count)...])) else {
+                continue
+            }
+
+            return [RubySegment(surface: kanjiPrefix, reading: rubyReading), RubySegment(surface: String(anchor), reading: nil)] + suffix
+        }
+
+        return nil
+    }
+
+    nonisolated private func kanaSlicesMatch(_ lhs: [Character], _ rhs: [Character]) -> Bool {
+        guard lhs.count == rhs.count else {
+            return false
+        }
+
+        return zip(lhs, rhs).allSatisfy { $0.matchesKana($1) }
+    }
+
     nonisolated private func escapeHTML(_ string: String) -> String {
         string
             .replacingOccurrences(of: "&", with: "&amp;")
@@ -365,6 +459,11 @@ private struct JapaneseRubyHTMLAnnotator {
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&#39;")
     }
+}
+
+private struct RubySegment {
+    let surface: String
+    let reading: String?
 }
 
 private struct HTMLTokenCursor {
@@ -527,6 +626,24 @@ private extension String {
 
     nonisolated var containsKanji: Bool {
         unicodeScalars.contains(where: \.isKanji)
+    }
+}
+
+private extension Character {
+    nonisolated var isKanaLike: Bool {
+        unicodeScalars.allSatisfy { $0.isHiragana || $0.isKatakana }
+    }
+
+    nonisolated var isKanjiLike: Bool {
+        unicodeScalars.contains(where: \.isKanji)
+    }
+
+    nonisolated func matchesKana(_ other: Character) -> Bool {
+        normalizedKana == other.normalizedKana
+    }
+
+    private nonisolated var normalizedKana: String {
+        String(String(self).applyingTransform(.hiraganaToKatakana, reverse: true) ?? String(self))
     }
 }
 

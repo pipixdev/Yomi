@@ -590,6 +590,9 @@
         }
       }
     },
+    "Opening stored EPUB…" : {
+
+    },
     "Page Margins" : {
 
     },
@@ -633,10 +636,16 @@
     "Preparing import…" : {
 
     },
+    "Preparing rebuild…" : {
+
+    },
     "Reader" : {
 
     },
     "Reading is powered by Readium Swift Toolkit." : {
+
+    },
+    "Rebuild" : {
 
     },
     "Remove" : {
