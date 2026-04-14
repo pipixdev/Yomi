@@ -174,6 +174,11 @@ struct BookshelfView: View {
         BookCardView(
             book: book,
             onOpen: { selectedBook = ReaderSelection(id: book.id) },
+            onRebuild: {
+                Task {
+                    await store.rebuildBook(id: book.id)
+                }
+            },
             onRemove: { pendingRemoval = book }
         )
     }
@@ -200,6 +205,7 @@ struct BookshelfView: View {
 private struct BookCardView: View {
     let book: BookRecord
     let onOpen: () -> Void
+    let onRebuild: () -> Void
     let onRemove: () -> Void
 
     @EnvironmentObject private var store: LibraryStore
@@ -235,6 +241,9 @@ private struct BookCardView: View {
                 .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
                 .overlay(alignment: .topTrailing) {
                     Menu {
+                        Button(action: onRebuild) {
+                            Label("Rebuild", systemImage: "arrow.triangle.2.circlepath")
+                        }
                         Button(role: .destructive, action: onRemove) {
                             Label("Remove", systemImage: "trash")
                         }

@@ -100,6 +100,48 @@ final class LibraryStore: ObservableObject {
 #endif
     }
 
+    func rebuildBook(id: UUID) async {
+        guard let index = books.firstIndex(where: { $0.id == id }) else { return }
+
+        isImporting = true
+        importProgressFraction = 0
+        importProgressLabel = String(localized: "Preparing rebuild…")
+        importError = nil
+
+        defer {
+            importProgressFraction = nil
+            isImporting = false
+        }
+
+#if canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
+        do {
+            let book = books[index]
+            guard let epubURL = epubURL(for: book) else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+
+            let rebuiltBook = try await importer.rebuildBook(
+                book,
+                fromStoredEPUBAt: epubURL,
+                using: fileManager,
+                progress: { [weak self] fraction, label in
+                    Task { @MainActor [weak self] in
+                        self?.importProgressFraction = fraction
+                        self?.importProgressLabel = label
+                    }
+                }
+            )
+
+            books[index] = rebuiltBook
+            try persist()
+        } catch {
+            importError = error.localizedDescription
+        }
+#else
+        importError = String(localized: "Readium reader is available on iOS only in this build.")
+#endif
+    }
+
     func removeBook(id: UUID) {
         guard let index = books.firstIndex(where: { $0.id == id }) else { return }
         let book = books.remove(at: index)
@@ -297,6 +339,56 @@ private final class ReadiumLibraryImporter {
             coverRelativePath: coverRelativePath,
             sourceFingerprint: sourceFingerprint
         )
+    }
+
+    func rebuildBook(
+        _ book: BookRecord,
+        fromStoredEPUBAt epubURL: URL,
+        using fileManager: FileManager = .default,
+        progress: @escaping (_ fraction: Double, _ label: String) -> Void
+    ) async throws -> BookRecord {
+        let folderURL = try LibraryStore.bookFolderURL(for: book.id, using: fileManager)
+        let normalizedFolderURL = folderURL.appendingPathComponent("normalized", isDirectory: true)
+
+        if fileManager.fileExists(atPath: normalizedFolderURL.path) {
+            try fileManager.removeItem(at: normalizedFolderURL)
+        }
+        try fileManager.createDirectory(at: normalizedFolderURL, withIntermediateDirectories: true)
+
+        guard let absoluteURL = epubURL.anyURL.absoluteURL else {
+            throw CocoaError(.fileReadUnknown)
+        }
+
+        progress(0.10, String(localized: "Opening stored EPUB…"))
+        let asset = try await assetRetriever.retrieve(url: absoluteURL).get()
+        let publication = try await publicationOpener.open(
+            asset: asset,
+            allowUserInteraction: false,
+            sender: nil
+        ).get()
+        defer {
+            publication.close()
+        }
+
+        guard publication.conforms(to: .epub) else {
+            throw CocoaError(.fileReadUnsupportedScheme)
+        }
+
+        guard case let .container(containerAsset) = asset else {
+            throw CocoaError(.fileReadUnknown)
+        }
+
+        try await normalizer.normalize(
+            container: containerAsset.container,
+            bookID: book.id,
+            outputDirectory: normalizedFolderURL,
+            progress: progress
+        )
+
+        var rebuiltBook = book
+        rebuiltBook.normalizedRelativePath = "Books/\(book.id.uuidString)/normalized"
+        rebuiltBook.normalizedVersion = EPUBImportNormalizer.version
+        return rebuiltBook
     }
 
     private func saveCoverIfAvailable(
