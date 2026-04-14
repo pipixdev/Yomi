@@ -3,10 +3,15 @@
 - If using XcodeBuildMCP, use the installed XcodeBuildMCP skill before calling XcodeBuildMCP tools.
 - For this project, prefer XcodeBuildMCP over raw `xcodebuild`, `simctl`, or ad-hoc simulator commands when building, running, logging, debugging, or driving the UI.
 - Default project context for XcodeBuildMCP:
-  project path: `/Users/pipix/Documents/Projects/Yomi/Yomi.xcodeproj`
+  project path: `Yomi.xcodeproj`
   scheme: `Yomi`
   simulator: `iPhone 17`
   bundle id: `com.pipix.Yomi`
+
+## Architecture Maintenance Rule
+
+- Project architecture documentation is maintained in `README.md` under `Project Architecture`.
+- If any task changes the project architecture, feature boundaries, core data flow, persistence approach, reader integration strategy, or import/normalization pipeline, update `README.md` before considering the task complete.
 
 ## Testing Priority
 
