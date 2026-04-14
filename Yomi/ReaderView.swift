@@ -6,6 +6,7 @@
 import SwiftUI
 
 #if canImport(UIKit)
+import AVFoundation
 import UIKit
 #endif
 
@@ -103,7 +104,7 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
     }
 }
 
-private final class ReadiumReaderViewController: UIViewController, EPUBNavigatorDelegate, UIGestureRecognizerDelegate {
+private final class ReadiumReaderViewController: UIViewController, EPUBNavigatorDelegate, UIGestureRecognizerDelegate, WKScriptMessageHandler {
     private let normalizedURL: URL?
     private let epubURL: URL
     private let initialLocatorJSON: String?
@@ -120,6 +121,8 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     private var navigator: EPUBNavigatorViewController?
     private var isChromeVisible = false
     private var hideChromeTask: Task<Void, Never>?
+    private var ttsTask: Task<Void, Never>?
+    private var paragraphPlayer: AVAudioPlayer?
 
     init(
         normalizedURL: URL?,
@@ -172,6 +175,8 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     }
 
     deinit {
+        ttsTask?.cancel()
+        paragraphPlayer?.stop()
         publication?.close()
     }
 
@@ -360,13 +365,32 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     }
 
     func navigator(_ navigator: EPUBNavigatorViewController, setupUserScripts userContentController: WKUserContentController) {
+        userContentController.removeScriptMessageHandler(forName: Self.speakParagraphHandlerName)
+        userContentController.add(self, name: Self.speakParagraphHandlerName)
         userContentController.addUserScript(
             WKUserScript(
-                source: Self.paragraphActionsScript,
+                source: Self.paragraphActionsScript(
+                    copyParagraphLabel: String(localized: "Copy paragraph"),
+                    readParagraphLabel: String(localized: "Read paragraph")
+                ),
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
             )
         )
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == Self.speakParagraphHandlerName else {
+            return
+        }
+
+        guard
+            let body = message.body as? [String: Any],
+            let text = body["text"] as? String
+        else {
+            return
+        }
+        requestParagraphSpeech(text: text)
     }
 
     func applyUserPreferences(fontScale: Double, pageMarginsScale: Double, fontOptionRawValue: String) {
@@ -411,17 +435,144 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         }
     }
 
-    private static let paragraphActionsScript = """
+    private func requestParagraphSpeech(text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return
+        }
+
+        ttsTask?.cancel()
+        paragraphPlayer?.stop()
+        ttsTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let responseAudio = try await self.synthesizeParagraphSpeech(text: trimmed)
+                try Task.checkCancellation()
+                await MainActor.run {
+                    self.playParagraphAudio(responseAudio)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                await MainActor.run {
+                    self.presentTTSError(error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func synthesizeParagraphSpeech(text: String) async throws -> Data {
+        let settings = ParagraphTTSSettingsStore.snapshot()
+        guard let endpointURL = settings.endpointURL else {
+            throw NSError(
+                domain: "YomiTTS",
+                code: 1001,
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "Set a TTS service URL in Settings first.")]
+            )
+        }
+
+        var payload: [String: Any] = [
+            "text": text,
+            "format": "wav"
+        ]
+
+        if
+            let referenceAudioData = settings.referenceAudioData,
+            let referenceText = settings.referenceText
+        {
+            payload["references"] = [
+                [
+                    "audio": referenceAudioData.base64EncodedString(),
+                    "text": referenceText
+                ]
+            ]
+        }
+
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        var request = URLRequest(url: endpointURL)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 180
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw NSError(
+                domain: "YomiTTS",
+                code: 1002,
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "Invalid server response.")]
+            )
+        }
+
+        guard (200 ..< 300).contains(http.statusCode) else {
+            let message = String(data: data, encoding: .utf8) ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
+            throw NSError(
+                domain: "YomiTTS",
+                code: http.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: message]
+            )
+        }
+
+        guard data.count >= 44, data.starts(with: Data("RIFF".utf8)), data.dropFirst(8).starts(with: Data("WAVE".utf8)) else {
+            throw NSError(
+                domain: "YomiTTS",
+                code: 1003,
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "Server did not return a valid WAV stream.")]
+            )
+        }
+
+        return data
+    }
+
+    private func playParagraphAudio(_ audioData: Data) {
+#if os(iOS)
+        let audioSession = AVAudioSession.sharedInstance()
+        try? audioSession.setCategory(.playback, mode: .default, options: [.duckOthers])
+        try? audioSession.setActive(true)
+#endif
+        do {
+            let player = try AVAudioPlayer(data: audioData)
+            player.prepareToPlay()
+            guard player.play() else {
+                throw NSError(
+                    domain: "YomiTTS",
+                    code: 1004,
+                    userInfo: [NSLocalizedDescriptionKey: String(localized: "Failed to play synthesized audio.")]
+                )
+            }
+            paragraphPlayer = player
+        } catch {
+            presentTTSError(error.localizedDescription)
+        }
+    }
+
+    private func presentTTSError(_ message: String) {
+        let alert = UIAlertController(
+            title: String(localized: "TTS Failed"),
+            message: message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
+        present(alert, animated: true)
+    }
+
+    private static let speakParagraphHandlerName = "yomiSpeakParagraph"
+
+    private static func paragraphActionsScript(copyParagraphLabel: String, readParagraphLabel: String) -> String {
+        let escapedCopyLabel = copyParagraphLabel.javascriptStringEscaped()
+        let escapedReadLabel = readParagraphLabel.javascriptStringEscaped()
+        return """
     (() => {
       const SLOT_SELECTOR = '.yomi-paragraph-slot';
       const TOOLBAR_CLASS = 'yomi-paragraph-toolbar';
       const BUTTON_CLASS = 'yomi-paragraph-action';
+      const SPEAK_HANDLER_NAME = '\(Self.speakParagraphHandlerName)';
 
       const actions = [
         {
           id: 'copy',
           icon: '⧉',
-          label: 'Copy paragraph',
+          label: '\(escapedCopyLabel)',
           perform: async (slot, button) => {
             const text = (slot.dataset.yomiParagraphText || '').trim();
             if (!text) return false;
@@ -462,6 +613,25 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
               window.setTimeout(() => button.classList.remove('is-feedback'), 900);
             }
             return copied;
+          }
+        },
+        {
+          id: 'speak',
+          icon: 'S',
+          label: '\(escapedReadLabel)',
+          perform: async (slot, button) => {
+            const text = (slot.dataset.yomiParagraphText || '').trim();
+            if (!text) return false;
+            const handler = window.webkit?.messageHandlers?.[SPEAK_HANDLER_NAME];
+            if (!handler || !handler.postMessage) return false;
+            try {
+              handler.postMessage({ text });
+              button.classList.add('is-feedback');
+              window.setTimeout(() => button.classList.remove('is-feedback'), 900);
+              return true;
+            } catch {
+              return false;
+            }
           }
         }
       ];
@@ -523,6 +693,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
       }
     })();
     """
+    }
 }
 
 private final class ReadiumRuntime {
@@ -535,5 +706,14 @@ private final class ReadiumRuntime {
             pdfFactory: DefaultPDFDocumentFactory()
         )
     )
+}
+
+private extension String {
+    func javascriptStringEscaped() -> String {
+        replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+    }
 }
 #endif

@@ -35,12 +35,14 @@
 - `Yomi/ReaderView.swift` is the bridge from SwiftUI into the Readium reader.
 - On iOS, `ReaderView` wraps a UIKit `ReadiumReaderViewController` via `UIViewControllerRepresentable`.
 - Reader preferences such as theme, font, and page margins are stored with `@AppStorage`.
+- Paragraph actions are injected into normalized HTML slots; the toolbar now supports both copy and per-paragraph TTS playback.
 - Reader location changes are pushed back into `LibraryStore` so progress can be restored later.
 
 ### Preferences and UI Settings
 
 - `Yomi/ReaderPreferencesView.swift` contains the settings UI.
 - App appearance and reader preferences are intentionally simple and currently stored in `@AppStorage`, not in a more complex settings domain.
+- Paragraph TTS runtime settings (`service base URL`, optional reference audio path, optional reference text) are persisted in `@AppStorage` keys and loaded at playback time.
 
 ### EPUB Import and Normalization Pipeline
 

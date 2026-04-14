@@ -4,12 +4,23 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ReaderPreferencesView: View {
+    private enum ImportTarget {
+        case referenceAudio
+        case referenceText
+    }
+
     @AppStorage("app.themePreference") private var themePreferenceRawValue = AppThemePreference.system.rawValue
     @AppStorage("reader.fontScale") private var readerFontScale = 1.0
     @AppStorage("reader.pageMarginsScale") private var readerPageMarginsScale = 1.0
     @AppStorage("reader.fontOption") private var readerFontOptionRawValue = ReaderFontOption.mincho.rawValue
+    @AppStorage(ParagraphTTSSettingsStore.serviceBaseURLKey) private var ttsServiceBaseURL = ""
+    @AppStorage(ParagraphTTSSettingsStore.referenceTextKey) private var ttsReferenceText = ""
+
+    @State private var activeImportTarget: ImportTarget?
+    @State private var settingsError: String?
 
     var body: some View {
         NavigationStack {
@@ -54,6 +65,53 @@ struct ReaderPreferencesView: View {
                     }
                 }
 
+                Section("Speech") {
+                    TextField("Service URL", text: $ttsServiceBaseURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Reference Audio")
+                            .font(.subheadline.weight(.semibold))
+                        if let path = ParagraphTTSSettingsStore.referenceAudioPath() {
+                            Text(URL(filePath: path).lastPathComponent)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Not set")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        HStack {
+                            Button("Import Audio") {
+                                activeImportTarget = .referenceAudio
+                            }
+                            Spacer()
+                            Button("Clear Audio", role: .destructive) {
+                                ParagraphTTSSettingsStore.clearReferenceAudio()
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Reference Text")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Button("Import Text") {
+                                activeImportTarget = .referenceText
+                            }
+                        }
+                        TextField("Reference transcript", text: $ttsReferenceText, axis: .vertical)
+                            .lineLimit(2 ... 6)
+                    }
+
+                    Text("When both reference audio and reference text are set, requests include references.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Current Scope") {
                     Text("Reading is powered by Readium Swift Toolkit.")
                     Text("Imported EPUBs keep an original source file and a rebuilt reading-optimized version.")
@@ -61,6 +119,71 @@ struct ReaderPreferencesView: View {
                 }
             }
             .navigationTitle("Settings")
+            .fileImporter(
+                isPresented: Binding(
+                    get: { activeImportTarget != nil },
+                    set: { _ in }
+                ),
+                allowedContentTypes: allowedImportContentTypes,
+                allowsMultipleSelection: false
+            ) { result in
+                let currentTarget = activeImportTarget
+                activeImportTarget = nil
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    switch currentTarget {
+                    case .referenceAudio:
+                        do {
+                            _ = try ParagraphTTSSettingsStore.saveReferenceAudio(from: url)
+                        } catch {
+                            settingsError = error.localizedDescription
+                        }
+                    case .referenceText:
+                        do {
+                            ttsReferenceText = try ParagraphTTSSettingsStore.saveReferenceText(from: url)
+                        } catch {
+                            settingsError = error.localizedDescription
+                        }
+                    case nil:
+                        return
+                    }
+                case .failure(let error):
+                    settingsError = error.localizedDescription
+                }
+            }
+            .alert("Settings Error", isPresented: Binding(
+                get: { settingsError != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        settingsError = nil
+                    }
+                }
+            ), actions: {
+                Button("OK") {
+                    settingsError = nil
+                }
+            }, message: {
+                Text(settingsError ?? "")
+            })
+        }
+    }
+
+    private var allowedImportContentTypes: [UTType] {
+        switch activeImportTarget {
+        case .referenceAudio:
+            var types: [UTType] = [.audio]
+            let extensions = ["mp3", "wav", "m4a", "flac", "ogg"]
+            for ext in extensions {
+                if let type = UTType(filenameExtension: ext), !types.contains(type) {
+                    types.append(type)
+                }
+            }
+            return types
+        case .referenceText:
+            return [.plainText, .utf8PlainText]
+        case nil:
+            return [.data]
         }
     }
 }
