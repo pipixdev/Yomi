@@ -53,6 +53,22 @@
         }
       }
     },
+    "Adjust typography and layout density for the reader." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjust typography and layout density for the reader."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调整阅读器的排版和页面密度。"
+          }
+        }
+      }
+    },
     "Appearance" : {
       "localizations" : {
         "en" : {
@@ -185,6 +201,22 @@
         }
       }
     },
+    "Choose whether Yomi follows the system appearance or stays fixed." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose whether Yomi follows the system appearance or stays fixed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择让 Yomi 跟随系统外观，或固定为指定外观。"
+          }
+        }
+      }
+    },
     "Clear Audio" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -215,6 +247,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭阅读页"
+          }
+        }
+      }
+    },
+    "Configured" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configured"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已配置"
           }
         }
       }
@@ -475,6 +524,23 @@
         }
       }
     },
+    "File" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件"
+          }
+        }
+      }
+    },
     "Finishing import…" : {
 
     },
@@ -495,7 +561,20 @@
       }
     },
     "Font" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Font"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "字体"
+          }
+        }
+      }
     },
     "Font Size" : {
       "localizations" : {
@@ -534,6 +613,7 @@
       }
     },
     "Import Audio" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -629,6 +709,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "服务端响应无效。"
+          }
+        }
+      }
+    },
+    "Leave empty to disable external speech requests." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leave empty to disable external speech requests."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "留空即可关闭外部语音请求。"
           }
         }
       }
@@ -936,7 +1032,20 @@
       }
     },
     "Reader" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reader"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "阅读"
+          }
+        }
+      }
     },
     "Rebuild" : {
 
@@ -992,6 +1101,7 @@
       }
     },
     "Reference transcript" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1202,6 +1312,9 @@
           }
         }
       }
+    },
+    "Text" : {
+
     },
     "The reader always uses the final part-of-speech annotated layout." : {
       "extractionState" : "stale",
