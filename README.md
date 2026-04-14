@@ -36,6 +36,8 @@
 - On iOS, `ReaderView` wraps a UIKit `ReadiumReaderViewController` via `UIViewControllerRepresentable`.
 - Reader preferences such as theme, font, and page margins are stored with `@AppStorage`.
 - Paragraph actions are injected into normalized HTML slots; the toolbar now supports both copy and per-paragraph TTS playback.
+- Paragraph TTS playback caches synthesized WAV audio per book, per paragraph, and per active TTS reference configuration so repeated plays can reuse local audio instead of re-requesting the service.
+- Rebuilding or removing a book clears that book's paragraph TTS cache so playback stays aligned with the latest normalized content.
 - Reader location changes are pushed back into `LibraryStore` so progress can be restored later.
 
 ### Preferences and UI Settings

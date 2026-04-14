@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import CryptoKit
 
 struct ParagraphTTSSettingsSnapshot {
     let endpointURL: URL?
@@ -102,6 +103,36 @@ enum ParagraphTTSSettingsStore {
         return path
     }
 
+    static func cachedAudio(forText text: String, bookID: UUID, settings: ParagraphTTSSettingsSnapshot) -> Data? {
+        guard let fileURL = cacheFileURL(forText: text, bookID: bookID, settings: settings) else {
+            return nil
+        }
+        return try? Data(contentsOf: fileURL)
+    }
+
+    static func cacheAudio(_ audioData: Data, forText text: String, bookID: UUID, settings: ParagraphTTSSettingsSnapshot) {
+        guard let fileURL = cacheFileURL(forText: text, bookID: bookID, settings: settings) else {
+            return
+        }
+
+        do {
+            try audioData.write(to: fileURL, options: .atomic)
+        } catch {
+            // Cache misses are acceptable; playback should continue even if persistence fails.
+        }
+    }
+
+    static func clearCachedAudio(forBookID bookID: UUID) {
+        let fm = FileManager.default
+        guard let directory = bookCacheDirectory(for: bookID, fileManager: fm) else {
+            return
+        }
+
+        if fm.fileExists(atPath: directory.path) {
+            try? fm.removeItem(at: directory)
+        }
+    }
+
     private static func normalizedReferenceText(defaults: UserDefaults = .standard) -> String? {
         let text = defaults.string(forKey: referenceTextKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let text, !text.isEmpty else {
@@ -125,5 +156,50 @@ enum ParagraphTTSSettingsStore {
         let directory = appSupport.appendingPathComponent("TTSReference", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    private static func cacheFileURL(forText text: String, bookID: UUID, settings: ParagraphTTSSettingsSnapshot) -> URL? {
+        let fm = FileManager.default
+        guard let directory = bookCacheDirectory(for: bookID, fileManager: fm) else {
+            return nil
+        }
+
+        let cacheKey = cacheKey(forText: text, settings: settings)
+        return directory.appendingPathComponent("\(cacheKey).wav")
+    }
+
+    private static func cacheKey(forText text: String, settings: ParagraphTTSSettingsSnapshot) -> String {
+        let endpoint = settings.endpointURL?.absoluteString ?? ""
+        let referenceText = settings.referenceText ?? ""
+        let referenceAudioHash = sha256Hex(for: settings.referenceAudioData ?? Data())
+        return sha256Hex(for: Data("\(endpoint)\n\(referenceText)\n\(referenceAudioHash)\n\(text)".utf8))
+    }
+
+    private static func sha256Hex(for data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func ttsCacheDirectory(fileManager: FileManager) throws -> URL {
+        guard let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let directory = appSupport.appendingPathComponent("TTSAudioCache", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    private static func bookCacheDirectory(for bookID: UUID, fileManager: FileManager) -> URL? {
+        guard let root = try? ttsCacheDirectory(fileManager: fileManager) else {
+            return nil
+        }
+
+        let directory = root.appendingPathComponent(bookID.uuidString, isDirectory: true)
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            return directory
+        } catch {
+            return nil
+        }
     }
 }

@@ -120,6 +120,7 @@ final class LibraryStore: ObservableObject {
                 throw CocoaError(.fileNoSuchFile)
             }
 
+            ParagraphTTSSettingsStore.clearCachedAudio(forBookID: book.id)
             let rebuiltBook = try await importer.rebuildBook(
                 book,
                 fromStoredEPUBAt: epubURL,
@@ -147,6 +148,7 @@ final class LibraryStore: ObservableObject {
         let book = books.remove(at: index)
 
         do {
+            ParagraphTTSSettingsStore.clearCachedAudio(forBookID: book.id)
             try deleteFiles(for: book)
             try persist()
         } catch {

@@ -35,6 +35,7 @@ struct ReaderView: View {
             if let book, let epubURL = store.epubURL(for: book) {
 #if canImport(ReadiumNavigator) && canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
                 ReadiumReaderContainer(
+                    bookID: bookID,
                     normalizedURL: store.normalizedURL(for: book),
                     epubURL: epubURL,
                     initialLocatorJSON: book.lastReadLocatorJSON,
@@ -69,6 +70,7 @@ struct ReaderView: View {
 
 #if canImport(ReadiumNavigator) && canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
 private struct ReadiumReaderContainer: UIViewControllerRepresentable {
+    let bookID: UUID
     let normalizedURL: URL?
     let epubURL: URL
     let initialLocatorJSON: String?
@@ -80,6 +82,7 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> UINavigationController {
         let controller = ReadiumReaderViewController(
+            bookID: bookID,
             normalizedURL: normalizedURL,
             epubURL: epubURL,
             initialLocatorJSON: initialLocatorJSON,
@@ -105,6 +108,7 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
 }
 
 private final class ReadiumReaderViewController: UIViewController, EPUBNavigatorDelegate, UIGestureRecognizerDelegate, WKScriptMessageHandler {
+    private let bookID: UUID
     private let normalizedURL: URL?
     private let epubURL: URL
     private let initialLocatorJSON: String?
@@ -125,6 +129,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     private var paragraphPlayer: AVAudioPlayer?
 
     init(
+        bookID: UUID,
         normalizedURL: URL?,
         epubURL: URL,
         initialLocatorJSON: String?,
@@ -134,6 +139,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         onClose: @escaping () -> Void,
         onLocationChange: @escaping (Locator) -> Void
     ) {
+        self.bookID = bookID
         self.normalizedURL = normalizedURL
         self.epubURL = epubURL
         self.initialLocatorJSON = initialLocatorJSON
@@ -471,6 +477,10 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             )
         }
 
+        if let cachedAudio = ParagraphTTSSettingsStore.cachedAudio(forText: text, bookID: bookID, settings: settings) {
+            return cachedAudio
+        }
+
         var payload: [String: Any] = [
             "text": text,
             "format": "wav"
@@ -521,6 +531,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             )
         }
 
+        ParagraphTTSSettingsStore.cacheAudio(data, forText: text, bookID: bookID, settings: settings)
         return data
     }
 
