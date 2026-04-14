@@ -23,6 +23,7 @@ struct ReaderView: View {
     @EnvironmentObject private var store: LibraryStore
     @AppStorage("reader.fontScale") private var readerFontScale = 1.0
     @AppStorage("reader.pageMarginsScale") private var readerPageMarginsScale = 1.0
+    @AppStorage("reader.fontOption") private var readerFontOptionRawValue = ReaderFontOption.mincho.rawValue
 
     private var book: BookRecord? {
         store.book(id: bookID)
@@ -38,6 +39,7 @@ struct ReaderView: View {
                     initialLocatorJSON: book.lastReadLocatorJSON,
                     fontScale: readerFontScale,
                     pageMarginsScale: readerPageMarginsScale,
+                    fontOptionRawValue: readerFontOptionRawValue,
                     onClose: {
                         dismiss()
                     },
@@ -71,6 +73,7 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
     let initialLocatorJSON: String?
     let fontScale: Double
     let pageMarginsScale: Double
+    let fontOptionRawValue: String
     let onClose: () -> Void
     let onLocationChange: (Locator) -> Void
 
@@ -81,6 +84,7 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
             initialLocatorJSON: initialLocatorJSON,
             initialFontScale: fontScale,
             initialPageMarginsScale: pageMarginsScale,
+            initialFontOptionRawValue: fontOptionRawValue,
             onClose: onClose,
             onLocationChange: onLocationChange
         )
@@ -91,7 +95,11 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
         guard let reader = uiViewController.viewControllers.first as? ReadiumReaderViewController else {
             return
         }
-        reader.applyUserPreferences(fontScale: fontScale, pageMarginsScale: pageMarginsScale)
+        reader.applyUserPreferences(
+            fontScale: fontScale,
+            pageMarginsScale: pageMarginsScale,
+            fontOptionRawValue: fontOptionRawValue
+        )
     }
 }
 
@@ -103,6 +111,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     private let onLocationChange: (Locator) -> Void
     private var readerFontScale: Double
     private var readerPageMarginsScale: Double
+    private var readerFontOption: ReaderFontOption
 
     private let spinner = UIActivityIndicatorView(style: .large)
     private let readium = ReadiumRuntime()
@@ -118,6 +127,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         initialLocatorJSON: String?,
         initialFontScale: Double,
         initialPageMarginsScale: Double,
+        initialFontOptionRawValue: String,
         onClose: @escaping () -> Void,
         onLocationChange: @escaping (Locator) -> Void
     ) {
@@ -128,6 +138,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         self.onLocationChange = onLocationChange
         readerFontScale = initialFontScale
         readerPageMarginsScale = initialPageMarginsScale
+        readerFontOption = ReaderFontOption(rawValue: initialFontOptionRawValue) ?? .mincho
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -358,11 +369,13 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         )
     }
 
-    func applyUserPreferences(fontScale: Double, pageMarginsScale: Double) {
+    func applyUserPreferences(fontScale: Double, pageMarginsScale: Double, fontOptionRawValue: String) {
         let normalizedFontScale = max(0.7, min(fontScale, 2.2))
         let normalizedMargins = max(0.0, min(pageMarginsScale, 2.5))
+        let normalizedFontOption = ReaderFontOption(rawValue: fontOptionRawValue) ?? .mincho
         let didChange = abs(normalizedFontScale - readerFontScale) > 0.0001
             || abs(normalizedMargins - readerPageMarginsScale) > 0.0001
+            || normalizedFontOption != readerFontOption
 
         guard didChange else {
             return
@@ -370,12 +383,14 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
 
         readerFontScale = normalizedFontScale
         readerPageMarginsScale = normalizedMargins
+        readerFontOption = normalizedFontOption
         navigator?.submitPreferences(makeUserPreferences())
     }
 
     private func makeUserPreferences() -> EPUBPreferences {
         EPUBPreferences(
             columnCount: .one,
+            fontFamily: resolvedFontFamily(for: readerFontOption),
             fontSize: readerFontScale,
             pageMargins: readerPageMarginsScale,
             publisherStyles: false,
@@ -384,6 +399,16 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             textNormalization: true,
             verticalText: false
         )
+    }
+
+    private func resolvedFontFamily(for option: ReaderFontOption) -> FontFamily {
+        switch option {
+        case .mincho:
+            // Book-like serif style to make small kana distinctions clearer.
+            return FontFamily(rawValue: "Hiragino Mincho ProN")
+        case .gothic:
+            return FontFamily(rawValue: "Hiragino Sans")
+        }
     }
 
     private static let paragraphActionsScript = """

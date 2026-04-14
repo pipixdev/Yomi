@@ -332,6 +332,9 @@
         }
       }
     },
+    "Font" : {
+
+    },
     "Font Size" : {
       "localizations" : {
         "en" : {
@@ -399,6 +402,9 @@
         }
       }
     },
+    "Imported EPUBs keep an original source file and a rebuilt reading-optimized version." : {
+
+    },
     "Importing EPUB…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -415,9 +421,6 @@
           }
         }
       }
-    },
-    "Japanese segmentation and ruby annotations are injected per resource, and existing ruby markup is preserved." : {
-
     },
     "Light" : {
       "localizations" : {

@@ -9,11 +9,18 @@ struct ReaderPreferencesView: View {
     @AppStorage("app.themePreference") private var themePreferenceRawValue = AppThemePreference.system.rawValue
     @AppStorage("reader.fontScale") private var readerFontScale = 1.0
     @AppStorage("reader.pageMarginsScale") private var readerPageMarginsScale = 1.0
+    @AppStorage("reader.fontOption") private var readerFontOptionRawValue = ReaderFontOption.mincho.rawValue
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Reader") {
+                    Picker("Font", selection: $readerFontOptionRawValue) {
+                        ForEach(ReaderFontOption.allCases) { option in
+                            Text(option.displayName).tag(option.rawValue)
+                        }
+                    }
+
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text("Font Size")
@@ -49,7 +56,7 @@ struct ReaderPreferencesView: View {
 
                 Section("Current Scope") {
                     Text("Reading is powered by Readium Swift Toolkit.")
-                    Text("Japanese segmentation and ruby annotations are injected per resource, and existing ruby markup is preserved.")
+                    Text("Imported EPUBs keep an original source file and a rebuilt reading-optimized version.")
                         .foregroundStyle(.secondary)
                 }
             }
