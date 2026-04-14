@@ -7,19 +7,22 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ReaderPreferencesView: View {
-    private enum ImportTarget {
-        case referenceAudio
-    }
-
     @AppStorage("app.themePreference") private var themePreferenceRawValue = AppThemePreference.system.rawValue
     @AppStorage("reader.fontScale") private var readerFontScale = 1.0
     @AppStorage("reader.pageMarginsScale") private var readerPageMarginsScale = 1.0
     @AppStorage("reader.fontOption") private var readerFontOptionRawValue = ReaderFontOption.mincho.rawValue
     @AppStorage(ParagraphTTSSettingsStore.serviceBaseURLKey) private var ttsServiceBaseURL = ""
-    @AppStorage(ParagraphTTSSettingsStore.referenceTextKey) private var ttsReferenceText = ""
 
-    @State private var activeImportTarget: ImportTarget?
+    @State private var ttsReferences: [ParagraphTTSReference]
+    @State private var selectedReferenceID: String?
+    @State private var editingReference: EditableReference?
     @State private var settingsError: String?
+
+    init() {
+        let references = ParagraphTTSSettingsStore.references()
+        _ttsReferences = State(initialValue: references)
+        _selectedReferenceID = State(initialValue: ParagraphTTSSettingsStore.selectedReferenceID())
+    }
 
     var body: some View {
         NavigationStack {
@@ -72,66 +75,38 @@ struct ReaderPreferencesView: View {
                             .autocorrectionDisabled()
                     }
 
-                    LabeledContent("Reference Text") {
-                        TextField("Reference transcript", text: $ttsReferenceText)
-                            .multilineTextAlignment(.trailing)
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Reference Audio")
-                            .font(.subheadline.weight(.semibold))
-                        if let path = ParagraphTTSSettingsStore.referenceAudioPath() {
-                            Text(URL(filePath: path).lastPathComponent)
-                                .font(.caption)
+                    NavigationLink {
+                        SpeechReferenceSelectionView(
+                            references: $ttsReferences,
+                            selectedReferenceID: $selectedReferenceID,
+                            onAddReference: { startCreatingReference() },
+                            onEditReference: { reference in startEditingReference(reference) },
+                            onDeleteReference: { referenceID in deleteReference(referenceID) },
+                            titleForReference: referenceTitle(for:)
+                        )
+                    } label: {
+                        LabeledContent("Reference") {
+                            Text(selectedReferenceSummary)
                                 .foregroundStyle(.secondary)
-                        } else {
-                            Text("Not set")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        HStack {
-                            Button("Import Audio") {
-                                activeImportTarget = .referenceAudio
-                            }
-                            Spacer()
-                            Button("Clear Audio", role: .destructive) {
-                                ParagraphTTSSettingsStore.clearReferenceAudio()
-                            }
                         }
                     }
 
-                    Text("When both reference audio and reference text are set, requests include references.")
+                    Text("Select which reference to use. Choose None to send speech requests without references.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Settings")
-            .fileImporter(
-                isPresented: Binding(
-                    get: { activeImportTarget != nil },
-                    set: { _ in }
-                ),
-                allowedContentTypes: allowedImportContentTypes,
-                allowsMultipleSelection: false
-            ) { result in
-                let currentTarget = activeImportTarget
-                activeImportTarget = nil
-                switch result {
-                case .success(let urls):
-                    guard let url = urls.first else { return }
-                    switch currentTarget {
-                    case .referenceAudio:
-                        do {
-                            _ = try ParagraphTTSSettingsStore.saveReferenceAudio(from: url)
-                        } catch {
-                            settingsError = error.localizedDescription
+            .sheet(item: $editingReference) { item in
+                NavigationStack {
+                    SpeechReferenceEditorView(
+                        draft: item.reference,
+                        onCancel: { editingReference = nil },
+                        onSave: { reference in
+                            saveReference(reference, isNew: item.isNew)
+                            editingReference = nil
                         }
-                    case nil:
-                        return
-                    }
-                case .failure(let error):
-                    settingsError = error.localizedDescription
+                    )
                 }
             }
             .alert("Settings Error", isPresented: Binding(
@@ -151,19 +126,250 @@ struct ReaderPreferencesView: View {
         }
     }
 
-    private var allowedImportContentTypes: [UTType] {
-        switch activeImportTarget {
-        case .referenceAudio:
-            var types: [UTType] = [.audio]
-            let extensions = ["mp3", "wav", "m4a", "flac", "ogg"]
-            for ext in extensions {
-                if let type = UTType(filenameExtension: ext), !types.contains(type) {
-                    types.append(type)
-                }
-            }
-            return types
-        case nil:
-            return [.data]
+    private var selectedReferenceSummary: String {
+        guard let selectedReference else {
+            return String(localized: "None")
+        }
+        return referenceTitle(for: selectedReference)
+    }
+
+    private var selectedReference: ParagraphTTSReference? {
+        guard let selectedReferenceID else {
+            return nil
+        }
+        return ttsReferences.first(where: { $0.id == selectedReferenceID })
+    }
+
+    private func startCreatingReference() {
+        editingReference = EditableReference(reference: ParagraphTTSReference(), isNew: true)
+    }
+
+    private func startEditingReference(_ reference: ParagraphTTSReference) {
+        editingReference = EditableReference(reference: reference, isNew: false)
+    }
+
+    private func saveReference(_ reference: ParagraphTTSReference, isNew: Bool) {
+        if let index = ttsReferences.firstIndex(where: { $0.id == reference.id }) {
+            ttsReferences[index] = reference
+        } else if isNew {
+            ttsReferences.append(reference)
+        } else {
+            ttsReferences.append(reference)
+        }
+
+        ParagraphTTSSettingsStore.saveReferences(ttsReferences)
+    }
+
+    private func deleteReference(_ referenceID: String) {
+        ParagraphTTSSettingsStore.deleteReference(referenceID)
+        ttsReferences = ParagraphTTSSettingsStore.references()
+        if selectedReferenceID == referenceID {
+            selectedReferenceID = nil
+            ParagraphTTSSettingsStore.setSelectedReferenceID(nil)
         }
     }
+
+    private func referenceTitle(for reference: ParagraphTTSReference) -> String {
+        if let title = reference.normalizedTitle {
+            return title
+        }
+
+        return String(localized: "Untitled Reference")
+    }
+}
+
+private struct SpeechReferenceSelectionView: View {
+    @Binding var references: [ParagraphTTSReference]
+    @Binding var selectedReferenceID: String?
+
+    let onAddReference: () -> Void
+    let onEditReference: (ParagraphTTSReference) -> Void
+    let onDeleteReference: (String) -> Void
+    let titleForReference: (ParagraphTTSReference) -> String
+
+    var body: some View {
+        List {
+            selectionRow(title: String(localized: "None"), subtitle: String(localized: "Without reference audio or text."), isSelected: selectedReferenceID == nil) {
+                selectedReferenceID = nil
+                ParagraphTTSSettingsStore.setSelectedReferenceID(nil)
+            }
+
+            ForEach(references) { reference in
+                Button {
+                    selectedReferenceID = reference.id
+                    ParagraphTTSSettingsStore.setSelectedReferenceID(reference.id)
+                } label: {
+                    HStack(spacing: 12) {
+                        Text(titleForReference(reference))
+                            .foregroundStyle(.primary)
+
+                        Spacer()
+
+                        if selectedReferenceID == reference.id {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.tint)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button("Delete", role: .destructive) {
+                        onDeleteReference(reference.id)
+                    }
+                    Button("Edit") {
+                        onEditReference(reference)
+                    }
+                    .tint(.blue)
+                }
+            }
+        }
+        .navigationTitle("Reference")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    onAddReference()
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add Reference")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func selectionRow(title: String, subtitle: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.tint)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct SpeechReferenceEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var draft: ParagraphTTSReference
+    @State private var isImportingAudio = false
+    @State private var importError: String?
+
+    let onCancel: () -> Void
+    let onSave: (ParagraphTTSReference) -> Void
+
+    init(
+        draft: ParagraphTTSReference,
+        onCancel: @escaping () -> Void,
+        onSave: @escaping (ParagraphTTSReference) -> Void
+    ) {
+        _draft = State(initialValue: draft)
+        self.onCancel = onCancel
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        Form {
+            Section("Reference") {
+                TextField("Title", text: $draft.title)
+
+                TextField("Reference transcript", text: $draft.text, axis: .vertical)
+                    .lineLimit(3 ... 8)
+            }
+
+            Section("Audio") {
+                if let path = draft.audioPath?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty {
+                    Text(URL(filePath: path).lastPathComponent)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Not set")
+                        .foregroundStyle(.secondary)
+                }
+
+                Button("Import Audio") {
+                    isImportingAudio = true
+                }
+            }
+        }
+        .navigationTitle("Edit Reference")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Cancel") {
+                    onCancel()
+                    dismiss()
+                }
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") {
+                    onSave(draft)
+                    dismiss()
+                }
+            }
+        }
+        .fileImporter(
+            isPresented: $isImportingAudio,
+            allowedContentTypes: allowedImportContentTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                do {
+                    let destinationURL = try ParagraphTTSSettingsStore.importReferenceAudio(from: url, for: draft.id)
+                    draft.audioPath = destinationURL.path
+                } catch {
+                    importError = error.localizedDescription
+                }
+            case .failure(let error):
+                importError = error.localizedDescription
+            }
+        }
+        .alert("Settings Error", isPresented: Binding(
+            get: { importError != nil },
+            set: { isPresented in
+                if !isPresented {
+                    importError = nil
+                }
+            }
+        ), actions: {
+            Button("OK") {
+                importError = nil
+            }
+        }, message: {
+            Text(importError ?? "")
+        })
+    }
+
+    private var allowedImportContentTypes: [UTType] {
+        var types: [UTType] = [.audio]
+        let extensions = ["mp3", "wav", "m4a", "flac", "ogg"]
+        for ext in extensions {
+            if let type = UTType(filenameExtension: ext), !types.contains(type) {
+                types.append(type)
+            }
+        }
+        return types
+    }
+}
+
+private struct EditableReference: Identifiable {
+    let id = UUID()
+    let reference: ParagraphTTSReference
+    let isNew: Bool
 }

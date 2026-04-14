@@ -6,6 +6,30 @@
 import Foundation
 import CryptoKit
 
+struct ParagraphTTSReference: Codable, Identifiable, Equatable {
+    let id: String
+    var title: String
+    var audioPath: String?
+    var text: String
+
+    init(id: String = UUID().uuidString, title: String = "", audioPath: String? = nil, text: String = "") {
+        self.id = id
+        self.title = title
+        self.audioPath = audioPath
+        self.text = text
+    }
+
+    var normalizedTitle: String? {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var normalizedText: String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 struct ParagraphTTSSettingsSnapshot {
     let endpointURL: URL?
     let referenceAudioData: Data?
@@ -14,13 +38,16 @@ struct ParagraphTTSSettingsSnapshot {
 
 enum ParagraphTTSSettingsStore {
     static let serviceBaseURLKey = "tts.serviceBaseURL"
-    static let referenceAudioPathKey = "tts.referenceAudioPath"
-    static let referenceTextKey = "tts.referenceText"
+    static let referencesKey = "tts.references"
+    static let selectedReferenceIDKey = "tts.selectedReferenceID"
 
     static func snapshot(defaults: UserDefaults = .standard) -> ParagraphTTSSettingsSnapshot {
         let endpoint = endpointURL(defaults: defaults)
-        let referenceText = normalizedReferenceText(defaults: defaults)
-        let referenceAudio = referenceAudioData(defaults: defaults)
+        let reference = selectedReference(defaults: defaults)
+        let referenceText = reference?.normalizedText
+        let referenceAudio = reference.flatMap { reference in
+            referenceAudioData(for: reference)
+        }
         return ParagraphTTSSettingsSnapshot(
             endpointURL: endpoint,
             referenceAudioData: referenceAudio,
@@ -42,14 +69,71 @@ enum ParagraphTTSSettingsStore {
         return baseURL.appending(path: "v1/tts")
     }
 
-    static func saveReferenceAudio(from sourceURL: URL, defaults: UserDefaults = .standard) throws -> URL {
+    static func references(defaults: UserDefaults = .standard) -> [ParagraphTTSReference] {
+        guard let data = defaults.data(forKey: referencesKey) else {
+            return []
+        }
+
+        do {
+            return try JSONDecoder().decode([ParagraphTTSReference].self, from: data)
+        } catch {
+            return []
+        }
+    }
+
+    static func saveReferences(_ references: [ParagraphTTSReference], defaults: UserDefaults = .standard) {
+        do {
+            let data = try JSONEncoder().encode(references)
+            defaults.set(data, forKey: referencesKey)
+        } catch {
+            return
+        }
+
+        let selectedID = selectedReferenceID(defaults: defaults)
+        if let selectedID, !references.contains(where: { $0.id == selectedID }) {
+            defaults.removeObject(forKey: selectedReferenceIDKey)
+        }
+    }
+
+    static func selectedReferenceID(defaults: UserDefaults = .standard) -> String? {
+        let id = defaults.string(forKey: selectedReferenceIDKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let id, !id.isEmpty else {
+            return nil
+        }
+        return id
+    }
+
+    static func setSelectedReferenceID(_ id: String?, defaults: UserDefaults = .standard) {
+        guard
+            let id = id?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !id.isEmpty
+        else {
+            defaults.removeObject(forKey: selectedReferenceIDKey)
+            return
+        }
+
+        defaults.set(id, forKey: selectedReferenceIDKey)
+    }
+
+    static func selectedReference(defaults: UserDefaults = .standard) -> ParagraphTTSReference? {
+        guard let selectedID = selectedReferenceID(defaults: defaults) else {
+            return nil
+        }
+        return references(defaults: defaults).first(where: { $0.id == selectedID })
+    }
+
+    static func importReferenceAudio(
+        from sourceURL: URL,
+        for referenceID: String
+    ) throws -> URL {
         let fm = FileManager.default
-        let directory = try referenceAssetsDirectory(fileManager: fm)
+        let directory = try referenceDirectory(for: referenceID, fileManager: fm)
         let ext = sourceURL.pathExtension.isEmpty ? "bin" : sourceURL.pathExtension
         let destinationURL = directory.appendingPathComponent("reference_audio.\(ext)")
 
-        if fm.fileExists(atPath: destinationURL.path) {
-            try fm.removeItem(at: destinationURL)
+        for existingURL in try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+            try? fm.removeItem(at: existingURL)
         }
 
         let scoped = sourceURL.startAccessingSecurityScopedResource()
@@ -60,47 +144,18 @@ enum ParagraphTTSSettingsStore {
         }
 
         try fm.copyItem(at: sourceURL, to: destinationURL)
-        defaults.set(destinationURL.path, forKey: referenceAudioPathKey)
         return destinationURL
     }
 
-    static func clearReferenceAudio(defaults: UserDefaults = .standard) {
-        guard let path = defaults.string(forKey: referenceAudioPathKey), !path.isEmpty else {
-            defaults.removeObject(forKey: referenceAudioPathKey)
+    static func deleteReference(_ referenceID: String, defaults: UserDefaults = .standard) {
+        var allReferences = references(defaults: defaults)
+        guard let index = allReferences.firstIndex(where: { $0.id == referenceID }) else {
             return
         }
 
-        let url = URL(filePath: path)
-        if FileManager.default.fileExists(atPath: url.path) {
-            try? FileManager.default.removeItem(at: url)
-        }
-        defaults.removeObject(forKey: referenceAudioPathKey)
-    }
-
-    static func saveReferenceText(_ text: String, defaults: UserDefaults = .standard) {
-        defaults.set(text, forKey: referenceTextKey)
-    }
-
-    static func saveReferenceText(from sourceURL: URL, defaults: UserDefaults = .standard) throws -> String {
-        let scoped = sourceURL.startAccessingSecurityScopedResource()
-        defer {
-            if scoped {
-                sourceURL.stopAccessingSecurityScopedResource()
-            }
-        }
-
-        let text = try String(contentsOf: sourceURL, encoding: .utf8)
-        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        defaults.set(normalized, forKey: referenceTextKey)
-        return normalized
-    }
-
-    static func referenceAudioPath(defaults: UserDefaults = .standard) -> String? {
-        let path = defaults.string(forKey: referenceAudioPathKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let path, !path.isEmpty else {
-            return nil
-        }
-        return path
+        removeReferenceAssets(for: allReferences[index], fileManager: .default)
+        allReferences.remove(at: index)
+        saveReferences(allReferences, defaults: defaults)
     }
 
     static func cachedAudio(forText text: String, bookID: UUID, settings: ParagraphTTSSettingsSnapshot) -> Data? {
@@ -133,27 +188,48 @@ enum ParagraphTTSSettingsStore {
         }
     }
 
-    private static func normalizedReferenceText(defaults: UserDefaults = .standard) -> String? {
-        let text = defaults.string(forKey: referenceTextKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let text, !text.isEmpty else {
-            return nil
-        }
-        return text
-    }
-
-    private static func referenceAudioData(defaults: UserDefaults = .standard) -> Data? {
-        guard let path = referenceAudioPath(defaults: defaults) else {
+    private static func referenceAudioData(for reference: ParagraphTTSReference) -> Data? {
+        guard
+            let path = reference.audioPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !path.isEmpty
+        else {
             return nil
         }
         return try? Data(contentsOf: URL(filePath: path))
     }
 
-    private static func referenceAssetsDirectory(fileManager: FileManager) throws -> URL {
+    private static func removeReferenceAssets(for reference: ParagraphTTSReference, fileManager: FileManager) {
+        guard
+            let path = reference.audioPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !path.isEmpty
+        else {
+            return
+        }
+
+        let fileURL = URL(filePath: path)
+        if fileManager.fileExists(atPath: fileURL.path) {
+            try? fileManager.removeItem(at: fileURL)
+        }
+
+        let directoryURL = fileURL.deletingLastPathComponent()
+        if fileManager.fileExists(atPath: directoryURL.path) {
+            try? fileManager.removeItem(at: directoryURL)
+        }
+    }
+
+    private static func referenceAssetsRootDirectory(fileManager: FileManager) throws -> URL {
         guard let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             throw CocoaError(.fileNoSuchFile)
         }
 
-        let directory = appSupport.appendingPathComponent("TTSReference", isDirectory: true)
+        let directory = appSupport.appendingPathComponent("TTSReferences", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    private static func referenceDirectory(for referenceID: String, fileManager: FileManager) throws -> URL {
+        let root = try referenceAssetsRootDirectory(fileManager: fileManager)
+        let directory = root.appendingPathComponent(referenceID, isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }

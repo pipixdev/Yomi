@@ -44,7 +44,7 @@
 
 - `Yomi/ReaderPreferencesView.swift` contains the settings UI.
 - App appearance and reader preferences are intentionally simple and currently stored in `@AppStorage`, not in a more complex settings domain.
-- Paragraph TTS runtime settings (`service base URL`, optional reference audio path, optional reference text) are persisted in `@AppStorage` keys and loaded at playback time.
+- Paragraph TTS runtime settings persist the service base URL plus a user-managed list of reference presets, where each preset stores one audio sample and one reference text and settings choose which preset is active or `None`.
 
 ### EPUB Import and Normalization Pipeline
 
