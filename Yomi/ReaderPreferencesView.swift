@@ -9,7 +9,6 @@ import UniformTypeIdentifiers
 struct ReaderPreferencesView: View {
     private enum ImportTarget {
         case referenceAudio
-        case referenceText
     }
 
     @AppStorage("app.themePreference") private var themePreferenceRawValue = AppThemePreference.system.rawValue
@@ -66,9 +65,17 @@ struct ReaderPreferencesView: View {
                 }
 
                 Section("Speech") {
-                    TextField("Service URL", text: $ttsServiceBaseURL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                    LabeledContent("Service URL") {
+                        TextField("http://127.0.0.1:8080", text: $ttsServiceBaseURL)
+                            .multilineTextAlignment(.trailing)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+
+                    LabeledContent("Reference Text") {
+                        TextField("Reference transcript", text: $ttsReferenceText)
+                            .multilineTextAlignment(.trailing)
+                    }
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Reference Audio")
@@ -94,27 +101,8 @@ struct ReaderPreferencesView: View {
                         }
                     }
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("Reference Text")
-                                .font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Button("Import Text") {
-                                activeImportTarget = .referenceText
-                            }
-                        }
-                        TextField("Reference transcript", text: $ttsReferenceText, axis: .vertical)
-                            .lineLimit(2 ... 6)
-                    }
-
                     Text("When both reference audio and reference text are set, requests include references.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Current Scope") {
-                    Text("Reading is powered by Readium Swift Toolkit.")
-                    Text("Imported EPUBs keep an original source file and a rebuilt reading-optimized version.")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -136,12 +124,6 @@ struct ReaderPreferencesView: View {
                     case .referenceAudio:
                         do {
                             _ = try ParagraphTTSSettingsStore.saveReferenceAudio(from: url)
-                        } catch {
-                            settingsError = error.localizedDescription
-                        }
-                    case .referenceText:
-                        do {
-                            ttsReferenceText = try ParagraphTTSSettingsStore.saveReferenceText(from: url)
                         } catch {
                             settingsError = error.localizedDescription
                         }
@@ -180,8 +162,6 @@ struct ReaderPreferencesView: View {
                 }
             }
             return types
-        case .referenceText:
-            return [.plainText, .utf8PlainText]
         case nil:
             return [.data]
         }
