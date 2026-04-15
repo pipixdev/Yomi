@@ -487,7 +487,12 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             return
         }
 
-        let controller = UIHostingController(
+        hideChromeTask?.cancel()
+        hideChromeTask = nil
+        isChromeVisible = true
+        navigationController?.setNavigationBarHidden(false, animated: false)
+
+        let controller = ReaderAnalysisHostingController(
             rootView: ParagraphAnalysisView(
                 tokens: textAnalyzer.tokens(for: trimmed)
             )
@@ -783,6 +788,13 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             return ""
         }
         return "data:image/png;base64,\(pngData.base64EncodedString())"
+    }
+}
+
+private final class ReaderAnalysisHostingController<Content: View>: UIHostingController<Content> {
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(false, animated: false)
     }
 }
 
