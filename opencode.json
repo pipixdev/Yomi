@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "XcodeBuildMCP": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "/Users/pipix/.bun/bin/bunx",
+        "xcodebuildmcp@latest",
+        "mcp"
+      ]
+    }
+  }
+}

@@ -377,7 +377,9 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             WKUserScript(
                 source: Self.paragraphActionsScript(
                     copyParagraphLabel: String(localized: "Copy paragraph"),
-                    readParagraphLabel: String(localized: "Read paragraph")
+                    readParagraphLabel: String(localized: "Read paragraph"),
+                    copyIconDataURI: Self.paragraphIconDataURI(systemName: "doc.on.doc"),
+                    readIconDataURI: Self.paragraphIconDataURI(systemName: "speaker.wave.2")
                 ),
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
@@ -569,20 +571,28 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
 
     private static let speakParagraphHandlerName = "yomiSpeakParagraph"
 
-    private static func paragraphActionsScript(copyParagraphLabel: String, readParagraphLabel: String) -> String {
+    private static func paragraphActionsScript(
+        copyParagraphLabel: String,
+        readParagraphLabel: String,
+        copyIconDataURI: String,
+        readIconDataURI: String
+    ) -> String {
         let escapedCopyLabel = copyParagraphLabel.javascriptStringEscaped()
         let escapedReadLabel = readParagraphLabel.javascriptStringEscaped()
+        let escapedCopyIconDataURI = copyIconDataURI.javascriptStringEscaped()
+        let escapedReadIconDataURI = readIconDataURI.javascriptStringEscaped()
         return """
     (() => {
       const SLOT_SELECTOR = '.yomi-paragraph-slot';
       const TOOLBAR_CLASS = 'yomi-paragraph-toolbar';
       const BUTTON_CLASS = 'yomi-paragraph-action';
+      const BUTTON_ICON_CLASS = 'yomi-paragraph-action-icon';
       const SPEAK_HANDLER_NAME = '\(Self.speakParagraphHandlerName)';
 
       const actions = [
         {
           id: 'copy',
-          icon: '⧉',
+          iconDataURI: '\(escapedCopyIconDataURI)',
           label: '\(escapedCopyLabel)',
           perform: async (slot, button) => {
             const text = (slot.dataset.yomiParagraphText || '').trim();
@@ -628,7 +638,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         },
         {
           id: 'speak',
-          icon: 'S',
+          iconDataURI: '\(escapedReadIconDataURI)',
           label: '\(escapedReadLabel)',
           perform: async (slot, button) => {
             const text = (slot.dataset.yomiParagraphText || '').trim();
@@ -652,7 +662,12 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         button.type = 'button';
         button.className = BUTTON_CLASS;
         button.dataset.yomiAction = action.id;
-        button.textContent = action.icon;
+        const icon = document.createElement('img');
+        icon.className = BUTTON_ICON_CLASS;
+        icon.src = action.iconDataURI;
+        icon.alt = '';
+        icon.setAttribute('aria-hidden', 'true');
+        button.appendChild(icon);
         button.setAttribute('aria-label', action.label);
         button.setAttribute('title', action.label);
         button.addEventListener('click', async event => {
@@ -704,6 +719,18 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
       }
     })();
     """
+    }
+
+    private static func paragraphIconDataURI(systemName: String) -> String {
+        let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .regular, scale: .medium)
+        guard
+            let symbolImage = UIImage(systemName: systemName, withConfiguration: config)?
+                .withTintColor(.black, renderingMode: .alwaysOriginal),
+            let pngData = symbolImage.pngData()
+        else {
+            return ""
+        }
+        return "data:image/png;base64,\(pngData.base64EncodedString())"
     }
 }
 
