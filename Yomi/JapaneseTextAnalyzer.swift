@@ -29,12 +29,14 @@ struct JapaneseTextAnalyzer {
 
             let reading = normalizedReading(token.reading, fallback: surface)
             let dictionaryForm = normalizedDictionaryForm(token.dictionaryForm, fallback: surface)
+            let partOfSpeech = partOfSpeech(for: token.partOfSpeech.description)
             return ReaderToken(
                 id: index,
                 surface: surface,
                 reading: reading,
-                partOfSpeech: partOfSpeech(for: token.partOfSpeech.description),
-                dictionaryForm: dictionaryForm
+                partOfSpeech: partOfSpeech,
+                dictionaryForm: dictionaryForm,
+                verbGroup: verbGroup(for: partOfSpeech, surface: surface, reading: reading, dictionaryForm: dictionaryForm)
             )
         }
     }
@@ -68,5 +70,53 @@ struct JapaneseTextAnalyzer {
         default:
             return .other
         }
+    }
+
+    nonisolated private func verbGroup(
+        for partOfSpeech: ReaderPartOfSpeech,
+        surface: String,
+        reading: String?,
+        dictionaryForm: String?
+    ) -> ReaderVerbGroup? {
+        guard partOfSpeech == .verb else { return nil }
+
+        let base = dictionaryForm ?? reading ?? surface
+        if base.hasSuffix("する") || base.hasSuffix("ずる") {
+            return .sahen
+        }
+
+        if base == "くる" {
+            return .kahen
+        }
+
+        if base.hasSuffix("る") {
+            if isLikelyIchidan(base) {
+                return .ichidan
+            }
+            return .godan
+        }
+
+        if let last = base.last, "うくぐすつぬぶむ".contains(last) {
+            return .godan
+        }
+
+        return .irregular
+    }
+
+    nonisolated private func isLikelyIchidan(_ base: String) -> Bool {
+        let exceptions: Set<String> = [
+            "はいる", "かえる", "しる", "はしる", "まじる", "にぎる",
+            "すべる", "しゃべる", "ひねる", "よる", "かぎる", "まいる"
+        ]
+
+        if exceptions.contains(base) {
+            return false
+        }
+
+        guard let penultimate = base.dropLast().last else {
+            return false
+        }
+
+        return "いきぎしじちぢにひびぴみりえけげせぜてでねへべぺめれ".contains(penultimate)
     }
 }

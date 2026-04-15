@@ -102,6 +102,7 @@ struct ReaderToken: Identifiable, Hashable {
     let reading: String?
     let partOfSpeech: ReaderPartOfSpeech
     let dictionaryForm: String?
+    let verbGroup: ReaderVerbGroup?
 }
 
 enum ReaderPartOfSpeech: String, Hashable, CaseIterable {
@@ -117,21 +118,44 @@ enum ReaderPartOfSpeech: String, Hashable, CaseIterable {
     var label: String {
         switch self {
         case .noun:
-            return "名词"
+            return String(localized: "Noun")
         case .verb:
-            return "动词"
+            return String(localized: "Verb")
         case .particle:
-            return "助词"
+            return String(localized: "Particle")
         case .adjective:
-            return "形容词"
+            return String(localized: "Adjective")
         case .adverb:
-            return "副词"
+            return String(localized: "Adverb")
         case .prefix:
-            return "前缀"
+            return String(localized: "Prefix")
         case .symbol:
-            return "符号"
+            return String(localized: "Symbol")
         case .other:
-            return "其他"
+            return String(localized: "Other")
+        }
+    }
+}
+
+enum ReaderVerbGroup: String, Hashable {
+    case ichidan
+    case godan
+    case sahen
+    case kahen
+    case irregular
+
+    var label: String {
+        switch self {
+        case .ichidan:
+            return String(localized: "Ichidan")
+        case .godan:
+            return String(localized: "Godan")
+        case .sahen:
+            return String(localized: "Sahen")
+        case .kahen:
+            return String(localized: "Kahen")
+        case .irregular:
+            return String(localized: "Irregular")
         }
     }
 }

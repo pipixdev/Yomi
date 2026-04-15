@@ -127,6 +127,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     private var hideChromeTask: Task<Void, Never>?
     private var ttsTask: Task<Void, Never>?
     private var paragraphPlayer: AVAudioPlayer?
+    private let textAnalyzer = JapaneseTextAnalyzer()
 
     init(
         bookID: UUID,
@@ -372,14 +373,18 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
 
     func navigator(_ navigator: EPUBNavigatorViewController, setupUserScripts userContentController: WKUserContentController) {
         userContentController.removeScriptMessageHandler(forName: Self.speakParagraphHandlerName)
+        userContentController.removeScriptMessageHandler(forName: Self.analyzeParagraphHandlerName)
         userContentController.add(self, name: Self.speakParagraphHandlerName)
+        userContentController.add(self, name: Self.analyzeParagraphHandlerName)
         userContentController.addUserScript(
             WKUserScript(
                 source: Self.paragraphActionsScript(
                     copyParagraphLabel: String(localized: "Copy paragraph"),
                     readParagraphLabel: String(localized: "Read paragraph"),
+                    analyzeParagraphLabel: String(localized: "Analyze paragraph"),
                     copyIconDataURI: Self.paragraphIconDataURI(systemName: "doc.on.doc"),
-                    readIconDataURI: Self.paragraphIconDataURI(systemName: "speaker.wave.2")
+                    readIconDataURI: Self.paragraphIconDataURI(systemName: "speaker.wave.2"),
+                    analyzeIconDataURI: Self.paragraphIconDataURI(systemName: "text.magnifyingglass")
                 ),
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
@@ -388,7 +393,9 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == Self.speakParagraphHandlerName else {
+        guard
+            message.name == Self.speakParagraphHandlerName || message.name == Self.analyzeParagraphHandlerName
+        else {
             return
         }
 
@@ -398,7 +405,12 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         else {
             return
         }
-        requestParagraphSpeech(text: text)
+
+        if message.name == Self.speakParagraphHandlerName {
+            requestParagraphSpeech(text: text)
+        } else {
+            presentParagraphAnalysis(for: text)
+        }
     }
 
     func applyUserPreferences(fontScale: Double, pageMarginsScale: Double, fontOptionRawValue: String) {
@@ -467,6 +479,22 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
                 }
             }
         }
+    }
+
+    private func presentParagraphAnalysis(for text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return
+        }
+
+        let controller = UIHostingController(
+            rootView: ParagraphAnalysisView(
+                paragraphText: trimmed,
+                tokens: textAnalyzer.tokens(for: trimmed)
+            )
+        )
+        controller.title = String(localized: "Parse")
+        navigationController?.pushViewController(controller, animated: true)
     }
 
     private func synthesizeParagraphSpeech(text: String) async throws -> Data {
@@ -570,17 +598,22 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     }
 
     private static let speakParagraphHandlerName = "yomiSpeakParagraph"
+    private static let analyzeParagraphHandlerName = "yomiAnalyzeParagraph"
 
     private static func paragraphActionsScript(
         copyParagraphLabel: String,
         readParagraphLabel: String,
+        analyzeParagraphLabel: String,
         copyIconDataURI: String,
-        readIconDataURI: String
+        readIconDataURI: String,
+        analyzeIconDataURI: String
     ) -> String {
         let escapedCopyLabel = copyParagraphLabel.javascriptStringEscaped()
         let escapedReadLabel = readParagraphLabel.javascriptStringEscaped()
+        let escapedAnalyzeLabel = analyzeParagraphLabel.javascriptStringEscaped()
         let escapedCopyIconDataURI = copyIconDataURI.javascriptStringEscaped()
         let escapedReadIconDataURI = readIconDataURI.javascriptStringEscaped()
+        let escapedAnalyzeIconDataURI = analyzeIconDataURI.javascriptStringEscaped()
         return """
     (() => {
       const SLOT_SELECTOR = '.yomi-paragraph-slot';
@@ -588,6 +621,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
       const BUTTON_CLASS = 'yomi-paragraph-action';
       const BUTTON_ICON_CLASS = 'yomi-paragraph-action-icon';
       const SPEAK_HANDLER_NAME = '\(Self.speakParagraphHandlerName)';
+      const ANALYZE_HANDLER_NAME = '\(Self.analyzeParagraphHandlerName)';
 
       const actions = [
         {
@@ -644,6 +678,25 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             const text = (slot.dataset.yomiParagraphText || '').trim();
             if (!text) return false;
             const handler = window.webkit?.messageHandlers?.[SPEAK_HANDLER_NAME];
+            if (!handler || !handler.postMessage) return false;
+            try {
+              handler.postMessage({ text });
+              button.classList.add('is-feedback');
+              window.setTimeout(() => button.classList.remove('is-feedback'), 900);
+              return true;
+            } catch {
+              return false;
+            }
+          }
+        },
+        {
+          id: 'analyze',
+          iconDataURI: '\(escapedAnalyzeIconDataURI)',
+          label: '\(escapedAnalyzeLabel)',
+          perform: async (slot, button) => {
+            const text = (slot.dataset.yomiParagraphText || '').trim();
+            if (!text) return false;
+            const handler = window.webkit?.messageHandlers?.[ANALYZE_HANDLER_NAME];
             if (!handler || !handler.postMessage) return false;
             try {
               handler.postMessage({ text });
