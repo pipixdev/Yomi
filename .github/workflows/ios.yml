@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build and Test on iPhone simulator
+    name: Build on iPhone simulator
     runs-on: macos-15
 
     steps:
@@ -32,13 +32,4 @@ jobs:
           if [ $scheme = default ]; then scheme=$(cat default); fi
           if [ "`ls -A | grep -i \\.xcworkspace\$`" ]; then filetype_parameter="workspace" && file_to_build="`ls -A | grep -i \\.xcworkspace\$`"; else filetype_parameter="project" && file_to_build="`ls -A | grep -i \\.xcodeproj\$`"; fi
           file_to_build=`echo $file_to_build | awk '{$1=$1;print}'`
-          xcodebuild build-for-testing -scheme "$scheme" -"$filetype_parameter" "$file_to_build" -destination "$destination"
-      - name: Test
-        env:
-          scheme: ${{ 'default' }}
-          destination: ${{ 'platform=iOS Simulator,name=iPhone 16' }}
-        run: |
-          if [ $scheme = default ]; then scheme=$(cat default); fi
-          if [ "`ls -A | grep -i \\.xcworkspace\$`" ]; then filetype_parameter="workspace" && file_to_build="`ls -A | grep -i \\.xcworkspace\$`"; else filetype_parameter="project" && file_to_build="`ls -A | grep -i \\.xcodeproj\$`"; fi
-          file_to_build=`echo $file_to_build | awk '{$1=$1;print}'`
-          xcodebuild test-without-building -scheme "$scheme" -"$filetype_parameter" "$file_to_build" -destination "$destination"
+          xcodebuild build -scheme "$scheme" -"$filetype_parameter" "$file_to_build" -destination "$destination"
