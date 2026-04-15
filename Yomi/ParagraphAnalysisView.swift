@@ -6,45 +6,33 @@
 import SwiftUI
 
 struct ParagraphAnalysisView: View {
-    let paragraphText: String
     let tokens: [ReaderToken]
 
     @State private var selectedToken: ReaderToken?
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(String(localized: "Morphology Analysis"))
-                        .font(.title2.weight(.bold))
-
-                    Text(paragraphText)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-
-                if tokens.isEmpty {
-                    ContentUnavailableView(
-                        String(localized: "No tokens found"),
-                        systemImage: "text.word.spacing"
-                    )
-                } else {
-                    TokenFlowLayout(spacing: 12) {
-                        ForEach(tokens) { token in
-                            Button {
-                                selectedToken = token
-                            } label: {
-                                ReaderTokenCard(token: token)
-                            }
-                            .buttonStyle(.plain)
+            if tokens.isEmpty {
+                ContentUnavailableView(
+                    String(localized: "No tokens found"),
+                    systemImage: "text.word.spacing"
+                )
+                .padding(20)
+            } else {
+                TokenFlowLayout(spacing: 6, lineSpacing: 14) {
+                    ForEach(tokens) { token in
+                        Button {
+                            selectedToken = token
+                        } label: {
+                            ReaderTokenChip(token: token)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
             }
-            .padding(20)
         }
-        .background(Color(.systemGroupedBackground))
         .navigationTitle(String(localized: "Parse"))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedToken) { token in
@@ -55,44 +43,45 @@ struct ParagraphAnalysisView: View {
     }
 }
 
-private struct ReaderTokenCard: View {
+private struct ReaderTokenChip: View {
     let token: ReaderToken
 
+    private let readingLineHeight: CGFloat = 14
+    private let surfaceLineHeight: CGFloat = 28
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(token.reading ?? " ")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(displaySegments.enumerated()), id: \.offset) { _, segment in
+                VStack(alignment: .leading, spacing: 3) {
+                    if let reading = segment.reading, !reading.isEmpty {
+                        Text(reading)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(height: readingLineHeight, alignment: .bottomLeading)
+                    } else {
+                        Color.clear
+                            .frame(height: readingLineHeight)
+                    }
 
-            Text(token.surface)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(segment.surface)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(height: surfaceLineHeight, alignment: .topLeading)
 
-            Rectangle()
-                .fill(color.opacity(0.85))
-                .frame(height: 8)
-                .clipShape(Capsule())
-
-            Text(token.partOfSpeech.label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .center)
+                    DashedUnderline(color: color)
+                        .frame(height: 3)
+                }
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(minWidth: 92)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(color.opacity(0.18))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(color.opacity(0.22), lineWidth: 1)
-        )
+        .padding(.horizontal, 1)
+    }
+
+    private var displaySegments: [TokenDisplaySegment] {
+        token.displaySegments
     }
 
     private var color: Color {
@@ -115,6 +104,27 @@ private struct ReaderTokenCard: View {
             return Color.blue
         }
     }
+}
+
+private struct DashedUnderline: View {
+    let color: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            Path { path in
+                path.move(to: CGPoint(x: 0, y: 1))
+                path.addLine(to: CGPoint(x: proxy.size.width, y: 1))
+            }
+            .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .butt, dash: [5, 4]))
+            .foregroundStyle(color.opacity(0.95))
+        }
+        .frame(height: 3)
+    }
+}
+
+private struct TokenDisplaySegment: Hashable {
+    let surface: String
+    let reading: String?
 }
 
 private struct TokenDetailSheet: View {
@@ -190,10 +200,11 @@ private struct UnsupportedTokenDetailView: View {
 
 private struct TokenFlowLayout<Content: View>: View {
     let spacing: CGFloat
+    let lineSpacing: CGFloat
     @ViewBuilder let content: Content
 
     var body: some View {
-        FlowLayout(spacing: spacing) {
+        FlowLayout(spacing: spacing, lineSpacing: lineSpacing) {
             content
         }
     }
@@ -201,6 +212,7 @@ private struct TokenFlowLayout<Content: View>: View {
 
 private struct FlowLayout: Layout {
     var spacing: CGFloat = 8
+    var lineSpacing: CGFloat = 8
 
     func sizeThatFits(
         proposal: ProposedViewSize,
@@ -249,7 +261,7 @@ private struct FlowLayout: Layout {
 
             if !currentItems.isEmpty, nextX + itemWidth > width {
                 rows.append(FlowRow(items: currentItems, maxY: currentY + currentRowHeight))
-                currentY += currentRowHeight + spacing
+                currentY += currentRowHeight + lineSpacing
                 currentItems = []
                 currentX = 0
                 currentRowHeight = 0
@@ -283,4 +295,143 @@ private struct PlacedFlowItem {
 private struct FlowRow {
     let items: [PlacedFlowItem]
     let maxY: CGFloat
+}
+
+private extension ReaderToken {
+    var displaySegments: [TokenDisplaySegment] {
+        guard
+            let reading,
+            !reading.isEmpty,
+            surface.containsKanji
+        else {
+            return [TokenDisplaySegment(surface: surface, reading: nil)]
+        }
+
+        if surface.allSatisfy(\.isKanjiLike) {
+            return [TokenDisplaySegment(surface: surface, reading: reading)]
+        }
+
+        guard let segments = ParagraphRubyAlignment.align(surface: Array(surface), reading: Array(reading)) else {
+            return [TokenDisplaySegment(surface: surface, reading: nil)]
+        }
+
+        return segments.map { TokenDisplaySegment(surface: $0.surface, reading: $0.reading) }
+    }
+}
+
+private enum ParagraphRubyAlignment {
+    static func align(surface: [Character], reading: [Character]) -> [TokenDisplaySegment]? {
+        guard !surface.isEmpty else {
+            return reading.isEmpty ? [] : nil
+        }
+
+        if surface.allSatisfy(\.isKanjiLike) {
+            guard !reading.isEmpty else { return nil }
+            return [TokenDisplaySegment(surface: String(surface), reading: String(reading))]
+        }
+
+        let first = surface[0]
+        if first.isKanaLike {
+            guard !reading.isEmpty, first.matchesKana(reading[0]) else {
+                return nil
+            }
+
+            guard let suffix = align(surface: Array(surface.dropFirst()), reading: Array(reading.dropFirst())) else {
+                return nil
+            }
+            return [TokenDisplaySegment(surface: String(first), reading: nil)] + suffix
+        }
+
+        var anchorStart: Int?
+        for index in surface.indices {
+            if surface[index].isKanaLike {
+                anchorStart = index
+                break
+            }
+        }
+
+        guard let anchorStart else {
+            guard !reading.isEmpty else { return nil }
+            return [TokenDisplaySegment(surface: String(surface), reading: String(reading))]
+        }
+
+        var anchorEnd = anchorStart
+        while anchorEnd < surface.count, surface[anchorEnd].isKanaLike {
+            anchorEnd += 1
+        }
+
+        let kanjiPrefix = String(surface[..<anchorStart])
+        let anchor = Array(surface[anchorStart..<anchorEnd])
+        let suffixSurface = Array(surface[anchorEnd...])
+
+        for matchStart in reading.indices where matchStart + anchor.count <= reading.count {
+            let readingAnchor = Array(reading[matchStart..<(matchStart + anchor.count)])
+            guard kanaSlicesMatch(anchor, readingAnchor) else {
+                continue
+            }
+
+            let rubyReading = String(reading[..<matchStart])
+            guard !rubyReading.isEmpty else {
+                continue
+            }
+
+            guard let suffix = align(surface: suffixSurface, reading: Array(reading[(matchStart + anchor.count)...])) else {
+                continue
+            }
+
+            return [TokenDisplaySegment(surface: kanjiPrefix, reading: rubyReading), TokenDisplaySegment(surface: String(anchor), reading: nil)] + suffix
+        }
+
+        return nil
+    }
+
+    private static func kanaSlicesMatch(_ lhs: [Character], _ rhs: [Character]) -> Bool {
+        guard lhs.count == rhs.count else {
+            return false
+        }
+
+        return zip(lhs, rhs).allSatisfy { $0.matchesKana($1) }
+    }
+}
+
+private extension String {
+    var containsKanji: Bool {
+        unicodeScalars.contains(where: \.isKanji)
+    }
+}
+
+private extension Character {
+    var isKanaLike: Bool {
+        unicodeScalars.allSatisfy { $0.isHiragana || $0.isKatakana }
+    }
+
+    var isKanjiLike: Bool {
+        unicodeScalars.contains(where: \.isKanji)
+    }
+
+    func matchesKana(_ other: Character) -> Bool {
+        normalizedKana == other.normalizedKana
+    }
+
+    private var normalizedKana: String {
+        String(String(self).applyingTransform(.hiraganaToKatakana, reverse: true) ?? String(self))
+    }
+}
+
+private extension UnicodeScalar {
+    var isKanji: Bool {
+        (0x3400...0x4DBF).contains(value)
+            || (0x4E00...0x9FFF).contains(value)
+            || (0xF900...0xFAFF).contains(value)
+    }
+
+    var isHiragana: Bool {
+        (0x3040...0x309F).contains(value)
+    }
+
+    var isKatakana: Bool {
+        (0x30A0...0x30FF).contains(value)
+            || (0x31F0...0x31FF).contains(value)
+            || (0xFF66...0xFF9F).contains(value)
+    }
 }

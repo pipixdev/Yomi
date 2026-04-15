@@ -53,6 +53,22 @@
         }
       }
     },
+    "Adjective" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjective"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "形容词"
+          }
+        }
+      }
+    },
     "Adjust typography and layout density for the reader." : {
       "localizations" : {
         "en" : {
@@ -65,6 +81,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "调整阅读器的排版和页面密度。"
+          }
+        }
+      }
+    },
+    "Adverb" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adverb"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "副词"
+          }
+        }
+      }
+    },
+    "Analyze paragraph" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyze paragraph"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解析段落"
           }
         }
       }
@@ -251,6 +299,22 @@
         }
       }
     },
+    "Coming Soon" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coming Soon"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即将支持"
+          }
+        }
+      }
+    },
     "Configured" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -399,6 +463,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除参考"
+          }
+        }
+      }
+    },
+    "Details for %@ are not available yet." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details for %@ are not available yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的详情暂未开放。"
+          }
+        }
+      }
+    },
+    "Dictionary form" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictionary form"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "辞书形"
           }
         }
       }
@@ -592,8 +688,40 @@
         }
       }
     },
+    "Godan" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Godan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "五段"
+          }
+        }
+      }
+    },
     "http://127.0.0.1:8080" : {
 
+    },
+    "Ichidan" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ichidan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一段"
+          }
+        }
+      }
     },
     "Import an EPUB with the + button." : {
       "extractionState" : "manual",
@@ -713,6 +841,38 @@
         }
       }
     },
+    "Irregular" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Irregular"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不规则"
+          }
+        }
+      }
+    },
+    "Kahen" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kahen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カ变"
+          }
+        }
+      }
+    },
     "Leave empty to disable external speech requests." : {
       "localizations" : {
         "en" : {
@@ -741,6 +901,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "日间模式"
+          }
+        }
+      }
+    },
+    "Morphology Analysis" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Morphology Analysis"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "词性解析"
           }
         }
       }
@@ -847,6 +1024,22 @@
         }
       }
     },
+    "No tokens found" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No tokens found"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未识别到词语"
+          }
+        }
+      }
+    },
     "None" : {
       "localizations" : {
         "en" : {
@@ -894,6 +1087,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未开始"
+          }
+        }
+      }
+    },
+    "Noun" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noun"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名词"
           }
         }
       }
@@ -969,6 +1178,22 @@
     "Opening stored EPUB…" : {
 
     },
+    "Other" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他"
+          }
+        }
+      }
+    },
     "Page Margins" : {
 
     },
@@ -989,6 +1214,22 @@
         }
       }
     },
+    "Parse" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parse"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解析"
+          }
+        }
+      }
+    },
     "Parsing publication…" : {
 
     },
@@ -1005,6 +1246,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "词性标记"
+          }
+        }
+      }
+    },
+    "Particle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Particle"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "助词"
+          }
+        }
+      }
+    },
+    "Prefix" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prefix"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前缀"
           }
         }
       }
@@ -1145,6 +1418,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除书籍"
+          }
+        }
+      }
+    },
+    "Sahen" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sahen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サ变"
           }
         }
       }
@@ -1292,6 +1581,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "朗读"
+          }
+        }
+      }
+    },
+    "Symbol" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Symbol"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "符号"
           }
         }
       }
@@ -1466,310 +1771,6 @@
         }
       }
     },
-    "Adjective" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Adjective"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "形容词"
-          }
-        }
-      }
-    },
-    "Adverb" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Adverb"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "副词"
-          }
-        }
-      }
-    },
-    "Analyze paragraph" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Analyze paragraph"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解析段落"
-          }
-        }
-      }
-    },
-    "Coming Soon" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Coming Soon"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "即将支持"
-          }
-        }
-      }
-    },
-    "Details for %@ are not available yet." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Details for %@ are not available yet."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 的详情暂未开放。"
-          }
-        }
-      }
-    },
-    "Dictionary form" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dictionary form"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "辞书形"
-          }
-        }
-      }
-    },
-    "Godan" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Godan"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "五段"
-          }
-        }
-      }
-    },
-    "Ichidan" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ichidan"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一段"
-          }
-        }
-      }
-    },
-    "Irregular" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Irregular"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不规则"
-          }
-        }
-      }
-    },
-    "Kahen" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kahen"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "カ变"
-          }
-        }
-      }
-    },
-    "Morphology Analysis" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Morphology Analysis"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "词性解析"
-          }
-        }
-      }
-    },
-    "No tokens found" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No tokens found"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未识别到词语"
-          }
-        }
-      }
-    },
-    "Noun" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Noun"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "名词"
-          }
-        }
-      }
-    },
-    "Other" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Other"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "其他"
-          }
-        }
-      }
-    },
-    "Parse" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Parse"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解析"
-          }
-        }
-      }
-    },
-    "Particle" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Particle"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "助词"
-          }
-        }
-      }
-    },
-    "Prefix" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Prefix"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前缀"
-          }
-        }
-      }
-    },
-    "Sahen" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sahen"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "サ变"
-          }
-        }
-      }
-    },
-    "Symbol" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Symbol"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "符号"
-          }
-        }
-      }
-    },
     "TTS Failed" : {
       "localizations" : {
         "en" : {
@@ -1782,22 +1783,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "朗读失败"
-          }
-        }
-      }
-    },
-    "Unknown" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unknown"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未知"
           }
         }
       }
@@ -1832,6 +1817,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法读取 EPUB 容器信息。"
+          }
+        }
+      }
+    },
+    "Unknown" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未知"
           }
         }
       }
@@ -1886,39 +1887,6 @@
         }
       }
     },
-    "When both reference audio and reference text are set, requests include references." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "When both reference audio and reference text are set, requests include references."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当参考音频和参考文字都设置后，请求会自动附带 references。"
-          }
-        }
-      }
-    },
-    "Without reference audio or text." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Without reference audio or text."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不使用参考音频或参考文字。"
-          }
-        }
-      }
-    },
     "Verb" : {
       "localizations" : {
         "en" : {
@@ -1962,7 +1930,40 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "几段"
+            "value" : "类型"
+          }
+        }
+      }
+    },
+    "When both reference audio and reference text are set, requests include references." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When both reference audio and reference text are set, requests include references."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当参考音频和参考文字都设置后，请求会自动附带 references。"
+          }
+        }
+      }
+    },
+    "Without reference audio or text." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Without reference audio or text."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不使用参考音频或参考文字。"
           }
         }
       }

@@ -489,7 +489,6 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
 
         let controller = UIHostingController(
             rootView: ParagraphAnalysisView(
-                paragraphText: trimmed,
                 tokens: textAnalyzer.tokens(for: trimmed)
             )
         )
