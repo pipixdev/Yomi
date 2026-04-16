@@ -165,7 +165,7 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
             .token-line {
               display: inline-block;
               padding-bottom: 3px;
-              border-bottom: 2px dashed var(--token-color);
+              border-bottom: 2px dotted var(--token-color);
               white-space: nowrap;
               font-size: 17px;
             }
