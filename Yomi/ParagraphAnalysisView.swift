@@ -13,7 +13,7 @@ struct ParagraphAnalysisView: View {
     let tokens: [ReaderToken]
 
     @AppStorage("analysis.fontScale") private var analysisFontScale = 1.0
-    @State private var selectedToken: ReaderToken?
+    @State private var activePresentation: TokenPresentation?
     @State private var contentHeight: CGFloat = 1
 
     var body: some View {
@@ -32,8 +32,8 @@ struct ParagraphAnalysisView: View {
         }
         .navigationTitle(String(localized: "Parse"))
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(item: $selectedToken) { token in
-            TokenDetailSheet(token: token)
+        .sheet(item: $activePresentation) { presentation in
+            TokenPresentationSheet(presentation: presentation)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -47,7 +47,7 @@ struct ParagraphAnalysisView: View {
             fontScale: analysisFontScale,
             contentHeight: $contentHeight,
             onSelectToken: { token in
-                selectedToken = token
+                activePresentation = .forToken(token)
             }
         )
         .frame(height: max(contentHeight, 1))
@@ -55,6 +55,26 @@ struct ParagraphAnalysisView: View {
         Text(tokens.map(\.surface).joined(separator: " "))
             .frame(maxWidth: .infinity, alignment: .leading)
 #endif
+    }
+}
+
+private enum TokenPresentation: Identifiable {
+    case dictionary(term: String)
+
+    var id: String {
+        switch self {
+        case .dictionary(let term):
+            return "dictionary-\(term)"
+        }
+    }
+
+    static func forToken(_ token: ReaderToken) -> Self {
+        switch token.partOfSpeech {
+        case .noun, .verb:
+            return .dictionary(term: token.dictionaryLookupTerm)
+        default:
+            return .dictionary(term: token.surface)
+        }
     }
 }
 
@@ -327,78 +347,34 @@ private struct TokenDisplaySegment: Hashable {
     }
 }
 
-private struct TokenDetailSheet: View {
-    let token: ReaderToken
+private struct TokenPresentationSheet: View {
+    let presentation: TokenPresentation
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if token.partOfSpeech == .verb {
-                    VerbTokenDetailView(token: token)
-                } else {
-                    UnsupportedTokenDetailView(token: token)
-                }
-            }
-            .navigationTitle(token.surface)
-            .navigationBarTitleDisplayMode(.inline)
+        switch presentation {
+        case .dictionary(let term):
+            DictionaryLookupView(term: term)
         }
     }
 }
 
-private struct VerbTokenDetailView: View {
-    let token: ReaderToken
+#if canImport(UIKit)
+private struct DictionaryLookupView: UIViewControllerRepresentable {
+    let term: String
 
-    var body: some View {
-        List {
-            Section {
-                detailRow(
-                    title: String(localized: "Verb group"),
-                    value: token.verbGroup?.label ?? String(localized: "Unknown")
-                )
-
-                detailRow(
-                    title: String(localized: "Dictionary form"),
-                    value: token.dictionaryForm ?? token.surface
-                )
-            } header: {
-                Text(String(localized: "Verb Details"))
-            }
-        }
+    func makeUIViewController(context: Context) -> UIReferenceLibraryViewController {
+        UIReferenceLibraryViewController(term: term)
     }
 
-    @ViewBuilder
-    private func detailRow(title: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .foregroundStyle(.secondary)
-
-            Spacer(minLength: 16)
-
-            Text(value)
-                .fontWeight(.semibold)
-                .multilineTextAlignment(.trailing)
-        }
-    }
+    func updateUIViewController(_ uiViewController: UIReferenceLibraryViewController, context: Context) {}
 }
-
-private struct UnsupportedTokenDetailView: View {
-    let token: ReaderToken
-
-    var body: some View {
-        ContentUnavailableView(
-            String(localized: "Coming Soon"),
-            systemImage: "square.grid.2x2",
-            description: Text(
-                String(
-                    format: String(localized: "Details for %@ are not available yet."),
-                    token.partOfSpeech.label
-                )
-            )
-        )
-    }
-}
+#endif
 
 private extension ReaderToken {
+    var dictionaryLookupTerm: String {
+        dictionaryForm ?? surface
+    }
+
     var displaySegments: [TokenDisplaySegment] {
         guard
             let reading,
