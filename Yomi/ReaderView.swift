@@ -125,8 +125,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     private var navigator: EPUBNavigatorViewController?
     private var isChromeVisible = false
     private var hideChromeTask: Task<Void, Never>?
-    private var ttsTask: Task<Void, Never>?
-    private var paragraphPlayer: AVAudioPlayer?
+    private let speechSynthesizer = AVSpeechSynthesizer()
     private let textAnalyzer = JapaneseTextAnalyzer()
 
     init(
@@ -182,8 +181,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     }
 
     deinit {
-        ttsTask?.cancel()
-        paragraphPlayer?.stop()
+        speechSynthesizer.stopSpeaking(at: .immediate)
         publication?.close()
     }
 
@@ -457,28 +455,25 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
 
     private func requestParagraphSpeech(text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return
+        guard !trimmed.isEmpty else { return }
+
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try session.setActive(true)
+        } catch {
+            print("Yomi TTS audio session setup failed: \(error)")
         }
 
-        ttsTask?.cancel()
-        paragraphPlayer?.stop()
-        ttsTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                let responseAudio = try await self.synthesizeParagraphSpeech(text: trimmed)
-                try Task.checkCancellation()
-                await MainActor.run {
-                    self.playParagraphAudio(responseAudio)
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                await MainActor.run {
-                    self.presentTTSError(error.localizedDescription)
-                }
-            }
+        speechSynthesizer.stopSpeaking(at: .immediate)
+        let utterance = AVSpeechUtterance(string: trimmed)
+        if let japaneseVoice = AVSpeechSynthesisVoice(language: "ja-JP") {
+            utterance.voice = japaneseVoice
+        } else {
+            print("Yomi TTS warning: no ja-JP voice available, falling back to default voice.")
+            utterance.voice = AVSpeechSynthesisVoice()
         }
+        speechSynthesizer.speak(utterance)
     }
 
     private func presentParagraphAnalysis(for text: String) {
@@ -499,106 +494,6 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         )
         controller.title = String(localized: "Parse")
         navigationController?.pushViewController(controller, animated: true)
-    }
-
-    private func synthesizeParagraphSpeech(text: String) async throws -> Data {
-        let settings = ParagraphTTSSettingsStore.snapshot()
-        guard let endpointURL = settings.endpointURL else {
-            throw NSError(
-                domain: "YomiTTS",
-                code: 1001,
-                userInfo: [NSLocalizedDescriptionKey: String(localized: "Set a TTS service URL in Settings first.")]
-            )
-        }
-
-        if let cachedAudio = ParagraphTTSSettingsStore.cachedAudio(forText: text, bookID: bookID, settings: settings) {
-            return cachedAudio
-        }
-
-        var payload: [String: Any] = [
-            "text": text,
-            "format": "wav"
-        ]
-
-        if
-            let referenceAudioData = settings.referenceAudioData,
-            let referenceText = settings.referenceText
-        {
-            payload["references"] = [
-                [
-                    "audio": referenceAudioData.base64EncodedString(),
-                    "text": referenceText
-                ]
-            ]
-        }
-
-        let body = try JSONSerialization.data(withJSONObject: payload)
-        var request = URLRequest(url: endpointURL)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 180
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw NSError(
-                domain: "YomiTTS",
-                code: 1002,
-                userInfo: [NSLocalizedDescriptionKey: String(localized: "Invalid server response.")]
-            )
-        }
-
-        guard (200 ..< 300).contains(http.statusCode) else {
-            let message = String(data: data, encoding: .utf8) ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
-            throw NSError(
-                domain: "YomiTTS",
-                code: http.statusCode,
-                userInfo: [NSLocalizedDescriptionKey: message]
-            )
-        }
-
-        guard data.count >= 44, data.starts(with: Data("RIFF".utf8)), data.dropFirst(8).starts(with: Data("WAVE".utf8)) else {
-            throw NSError(
-                domain: "YomiTTS",
-                code: 1003,
-                userInfo: [NSLocalizedDescriptionKey: String(localized: "Server did not return a valid WAV stream.")]
-            )
-        }
-
-        ParagraphTTSSettingsStore.cacheAudio(data, forText: text, bookID: bookID, settings: settings)
-        return data
-    }
-
-    private func playParagraphAudio(_ audioData: Data) {
-#if os(iOS)
-        let audioSession = AVAudioSession.sharedInstance()
-        try? audioSession.setCategory(.playback, mode: .default, options: [.duckOthers])
-        try? audioSession.setActive(true)
-#endif
-        do {
-            let player = try AVAudioPlayer(data: audioData)
-            player.prepareToPlay()
-            guard player.play() else {
-                throw NSError(
-                    domain: "YomiTTS",
-                    code: 1004,
-                    userInfo: [NSLocalizedDescriptionKey: String(localized: "Failed to play synthesized audio.")]
-                )
-            }
-            paragraphPlayer = player
-        } catch {
-            presentTTSError(error.localizedDescription)
-        }
-    }
-
-    private func presentTTSError(_ message: String) {
-        let alert = UIAlertController(
-            title: String(localized: "TTS Failed"),
-            message: message,
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-        present(alert, animated: true)
     }
 
     private static let speakParagraphHandlerName = "yomiSpeakParagraph"

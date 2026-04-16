@@ -38,6 +38,7 @@
       }
     },
     "Add Reference" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -134,6 +135,7 @@
       }
     },
     "Audio" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -419,6 +421,7 @@
       }
     },
     "Delete" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -517,6 +520,7 @@
       }
     },
     "Done" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -533,6 +537,7 @@
       }
     },
     "Edit" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -549,6 +554,7 @@
       }
     },
     "Edit Reference" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -605,6 +611,7 @@
 
     },
     "Failed to play synthesized audio." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -703,9 +710,6 @@
           }
         }
       }
-    },
-    "http://127.0.0.1:8080" : {
-
     },
     "Ichidan" : {
       "localizations" : {
@@ -826,6 +830,7 @@
       }
     },
     "Invalid server response." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -874,6 +879,7 @@
       }
     },
     "Leave empty to disable external speech requests." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1041,6 +1047,7 @@
       }
     },
     "None" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1060,6 +1067,7 @@
 
     },
     "Not set" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1324,6 +1332,7 @@
 
     },
     "Reference" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1439,6 +1448,7 @@
       }
     },
     "Select which reference to use. Choose None to send speech requests without references." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1455,6 +1465,7 @@
       }
     },
     "Server did not return a valid WAV stream." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1471,6 +1482,7 @@
       }
     },
     "Service URL" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1487,6 +1499,7 @@
       }
     },
     "Set a TTS service URL in Settings first." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1520,6 +1533,7 @@
       }
     },
     "Settings Error" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1570,6 +1584,7 @@
       }
     },
     "Speech" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1617,9 +1632,6 @@
           }
         }
       }
-    },
-    "Text" : {
-
     },
     "The reader always uses the final part-of-speech annotated layout." : {
       "extractionState" : "stale",
@@ -1705,6 +1717,7 @@
       }
     },
     "Title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1772,6 +1785,7 @@
       }
     },
     "TTS Failed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1872,6 +1886,7 @@
       }
     },
     "Untitled Reference" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1953,6 +1968,7 @@
       }
     },
     "Without reference audio or text." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
