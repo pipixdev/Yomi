@@ -4,11 +4,16 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+import WebKit
+#endif
 
 struct ParagraphAnalysisView: View {
     let tokens: [ReaderToken]
 
     @State private var selectedToken: ReaderToken?
+    @State private var contentHeight: CGFloat = 1
 
     var body: some View {
         ScrollView {
@@ -19,18 +24,9 @@ struct ParagraphAnalysisView: View {
                 )
                 .padding(20)
             } else {
-                TokenFlowLayout(spacing: 6, lineSpacing: 14) {
-                    ForEach(tokens) { token in
-                        Button {
-                            selectedToken = token
-                        } label: {
-                            ReaderTokenChip(token: token)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                tokenContent
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
             }
         }
         .navigationTitle(String(localized: "Parse"))
@@ -41,90 +37,278 @@ struct ParagraphAnalysisView: View {
                 .presentationDragIndicator(.visible)
         }
     }
+
+    @ViewBuilder
+    private var tokenContent: some View {
+#if canImport(UIKit)
+        AnalysisTokensWebView(
+            tokens: tokens,
+            contentHeight: $contentHeight,
+            onSelectToken: { token in
+                selectedToken = token
+            }
+        )
+        .frame(height: max(contentHeight, 1))
+#else
+        Text(tokens.map(\.surface).joined(separator: " "))
+            .frame(maxWidth: .infinity, alignment: .leading)
+#endif
+    }
 }
 
-private struct ReaderTokenChip: View {
-    let token: ReaderToken
+#if canImport(UIKit)
+private struct AnalysisTokensWebView: UIViewRepresentable {
+    let tokens: [ReaderToken]
+    @Binding var contentHeight: CGFloat
+    let onSelectToken: (ReaderToken) -> Void
 
-    private let readingLineHeight: CGFloat = 14
-    private let surfaceLineHeight: CGFloat = 28
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            tokens: tokens,
+            contentHeight: $contentHeight,
+            onSelectToken: onSelectToken
+        )
+    }
 
-    var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            ForEach(Array(displaySegments.enumerated()), id: \.offset) { _, segment in
-                VStack(alignment: .leading, spacing: 3) {
-                    if let reading = segment.reading, !reading.isEmpty {
-                        Text(reading)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .frame(height: readingLineHeight, alignment: .bottomLeading)
-                    } else {
-                        Color.clear
-                            .frame(height: readingLineHeight)
+    func makeUIView(context: Context) -> WKWebView {
+        let controller = WKUserContentController()
+        controller.add(context.coordinator, name: Coordinator.selectHandlerName)
+
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = controller
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.bounces = false
+        webView.scrollView.backgroundColor = .clear
+        webView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        webView.setContentHuggingPriority(.required, for: .vertical)
+        webView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        webView.setContentCompressionResistancePriority(.required, for: .vertical)
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        context.coordinator.tokens = tokens
+        context.coordinator.onSelectToken = onSelectToken
+        let html = Self.documentHTML(for: tokens)
+        guard context.coordinator.currentHTML != html else { return }
+        context.coordinator.currentHTML = html
+        webView.loadHTMLString(html, baseURL: nil)
+    }
+
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        uiView.navigationDelegate = nil
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.selectHandlerName)
+        uiView.stopLoading()
+    }
+
+    private static func documentHTML(for tokens: [ReaderToken]) -> String {
+        let tokenHTML = tokens.enumerated().map { index, token in
+            let label = "\(token.surface) \(token.reading ?? "")".trimmingCharacters(in: .whitespaces)
+            return """
+            <button class="token \(token.hasRuby ? "has-ruby" : "plain-token")" type="button" data-index="\(index)" aria-label="\(label.htmlEscaped)">
+              <span class="token-line" style="--token-color: \(token.partOfSpeech.cssColor);">\(token.rubyHTML)</span>
+            </button>
+            """
+        }.joined(separator: "\n")
+
+        return """
+        <!doctype html>
+        <html lang="ja">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+          <style>
+            :root {
+              color-scheme: light dark;
+            }
+            html, body {
+              margin: 0;
+              padding: 0;
+              background: transparent;
+            }
+            body {
+              color: rgb(28, 28, 30);
+              font-family: -apple-system, BlinkMacSystemFont, "Hiragino Mincho ProN", "YuMincho", serif;
+              font-size: 17px;
+              font-weight: 600;
+              line-height: 1.25;
+              -webkit-text-size-adjust: 100%;
+              text-rendering: optimizeLegibility;
+            }
+            #tokens {
+              width: 100%;
+              font-size: 0;
+            }
+            .token {
+              display: inline-block;
+              vertical-align: baseline;
+              border: 0;
+              background: transparent;
+              padding: 0 1px;
+              margin: 0 6px 14px 0;
+              color: inherit;
+              font: inherit;
+              text-align: left;
+              cursor: pointer;
+              appearance: none;
+              -webkit-appearance: none;
+              -webkit-tap-highlight-color: transparent;
+              line-height: 1.25;
+            }
+            .token-line {
+              display: inline-block;
+              padding-bottom: 3px;
+              border-bottom: 2px dashed var(--token-color);
+              white-space: nowrap;
+              font-size: 17px;
+            }
+            ruby {
+              ruby-position: over;
+              ruby-align: center;
+              ruby-overhang: auto;
+            }
+            .plain-token {
+              padding-top: 0.95em;
+            }
+            rt {
+              font-size: 10px;
+              font-weight: 500;
+              line-height: 1;
+              color: rgba(60, 60, 67, 0.72);
+              user-select: none;
+              -webkit-user-select: none;
+            }
+          </style>
+        </head>
+        <body>
+          <div id="tokens">\(tokenHTML)</div>
+          <script>
+            (() => {
+              const handler = window.webkit?.messageHandlers?.\(Coordinator.selectHandlerName.jsIdentifier);
+              const reportHeight = () => {
+                const root = document.documentElement;
+                const body = document.body;
+                const height = Math.max(root.scrollHeight, body.scrollHeight, root.offsetHeight, body.offsetHeight);
+                document.title = String(height);
+              };
+              document.querySelectorAll('.token').forEach(button => {
+                button.addEventListener('click', event => {
+                  event.preventDefault();
+                  const value = Number(button.dataset.index);
+                  if (handler && Number.isFinite(value)) {
+                    handler.postMessage(value);
+                  }
+                });
+              });
+              reportHeight();
+              window.addEventListener('load', reportHeight, { once: true });
+              if (document.fonts?.ready) {
+                document.fonts.ready.then(reportHeight).catch(() => {});
+              }
+              new ResizeObserver(reportHeight).observe(document.body);
+            })();
+          </script>
+        </body>
+        </html>
+        """
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        static let selectHandlerName = "yomiSelectToken"
+
+        var tokens: [ReaderToken]
+        @Binding var contentHeight: CGFloat
+        var onSelectToken: (ReaderToken) -> Void
+        var currentHTML = ""
+
+        init(
+            tokens: [ReaderToken],
+            contentHeight: Binding<CGFloat>,
+            onSelectToken: @escaping (ReaderToken) -> Void
+        ) {
+            self.tokens = tokens
+            _contentHeight = contentHeight
+            self.onSelectToken = onSelectToken
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            updateHeight(from: webView)
+        }
+
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            updateHeight(from: webView)
+        }
+
+        func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+            updateHeight(from: webView)
+        }
+
+        func webView(_ webView: WKWebView, didReceive message: WKScriptMessage) {
+            userContentController(webView.configuration.userContentController, didReceive: message)
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard
+                message.name == Self.selectHandlerName,
+                let index = message.body as? Int,
+                tokens.indices.contains(index)
+            else {
+                return
+            }
+
+            onSelectToken(tokens[index])
+        }
+
+        private func updateHeight(from webView: WKWebView) {
+            webView.evaluateJavaScript("document.title") { [weak self] result, _ in
+                guard
+                    let self,
+                    let title = result as? String,
+                    let value = Double(title)
+                else {
+                    return
+                }
+
+                let height = CGFloat(value)
+                DispatchQueue.main.async {
+                    if abs(self.contentHeight - height) > 0.5 {
+                        self.contentHeight = max(height, 1)
                     }
-
-                    Text(segment.surface)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .frame(height: surfaceLineHeight, alignment: .topLeading)
-
-                    DashedUnderline(color: color)
-                        .frame(height: 3)
                 }
             }
         }
-        .padding(.horizontal, 1)
-    }
-
-    private var displaySegments: [TokenDisplaySegment] {
-        token.displaySegments
-    }
-
-    private var color: Color {
-        switch token.partOfSpeech {
-        case .noun:
-            return Color.yellow
-        case .verb:
-            return Color.green
-        case .particle:
-            return Color.cyan
-        case .adjective:
-            return Color.pink
-        case .adverb:
-            return Color.purple
-        case .prefix:
-            return Color.orange
-        case .symbol:
-            return Color.gray
-        case .other:
-            return Color.blue
-        }
     }
 }
 
-private struct DashedUnderline: View {
-    let color: Color
-
-    var body: some View {
-        GeometryReader { proxy in
-            Path { path in
-                path.move(to: CGPoint(x: 0, y: 1))
-                path.addLine(to: CGPoint(x: proxy.size.width, y: 1))
-            }
-            .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .butt, dash: [5, 4]))
-            .foregroundStyle(color.opacity(0.95))
-        }
-        .frame(height: 3)
+private extension String {
+    var jsIdentifier: String {
+        filter { $0.isLetter || $0.isNumber || $0 == "_" }
     }
 }
+#endif
 
 private struct TokenDisplaySegment: Hashable {
     let surface: String
     let reading: String?
+
+    var html: String {
+        if let reading, !reading.isEmpty {
+            return #"<ruby><rb>"#
+                + surface.htmlEscaped
+                + #"</rb><rt>"#
+                + reading.htmlEscaped
+                + "</rt></ruby>"
+        }
+
+        return surface.htmlEscaped
+    }
 }
 
 private struct TokenDetailSheet: View {
@@ -198,105 +382,6 @@ private struct UnsupportedTokenDetailView: View {
     }
 }
 
-private struct TokenFlowLayout<Content: View>: View {
-    let spacing: CGFloat
-    let lineSpacing: CGFloat
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        FlowLayout(spacing: spacing, lineSpacing: lineSpacing) {
-            content
-        }
-    }
-}
-
-private struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
-    var lineSpacing: CGFloat = 8
-
-    func sizeThatFits(
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout ()
-    ) -> CGSize {
-        let containerWidth = proposal.width ?? 320
-        let rows = arrangeRows(in: containerWidth, subviews: subviews)
-        let height = rows.last.map { $0.maxY } ?? 0
-        return CGSize(width: containerWidth, height: height)
-    }
-
-    func placeSubviews(
-        in bounds: CGRect,
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout ()
-    ) {
-        let rows = arrangeRows(in: bounds.width, subviews: subviews)
-        for row in rows {
-            for item in row.items {
-                subviews[item.index].place(
-                    at: CGPoint(x: bounds.minX + item.frame.minX, y: bounds.minY + item.frame.minY),
-                    proposal: ProposedViewSize(item.frame.size)
-                )
-            }
-        }
-    }
-
-    private func arrangeRows(in width: CGFloat, subviews: Subviews) -> [FlowRow] {
-        guard !subviews.isEmpty else { return [] }
-
-        let measured = subviews.enumerated().map { index, subview in
-            FlowItem(index: index, size: subview.sizeThatFits(.unspecified))
-        }
-
-        var rows: [FlowRow] = []
-        var currentItems: [PlacedFlowItem] = []
-        var currentX: CGFloat = 0
-        var currentY: CGFloat = 0
-        var currentRowHeight: CGFloat = 0
-
-        for item in measured {
-            let itemWidth = min(item.size.width, width)
-            let nextX = currentItems.isEmpty ? 0 : currentX + spacing
-
-            if !currentItems.isEmpty, nextX + itemWidth > width {
-                rows.append(FlowRow(items: currentItems, maxY: currentY + currentRowHeight))
-                currentY += currentRowHeight + lineSpacing
-                currentItems = []
-                currentX = 0
-                currentRowHeight = 0
-            }
-
-            let originX = currentItems.isEmpty ? 0 : currentX + spacing
-            let frame = CGRect(origin: CGPoint(x: originX, y: currentY), size: CGSize(width: itemWidth, height: item.size.height))
-            currentItems.append(PlacedFlowItem(index: item.index, frame: frame))
-            currentX = frame.maxX
-            currentRowHeight = max(currentRowHeight, item.size.height)
-        }
-
-        if !currentItems.isEmpty {
-            rows.append(FlowRow(items: currentItems, maxY: currentY + currentRowHeight))
-        }
-
-        return rows
-    }
-}
-
-private struct FlowItem {
-    let index: Int
-    let size: CGSize
-}
-
-private struct PlacedFlowItem {
-    let index: Int
-    let frame: CGRect
-}
-
-private struct FlowRow {
-    let items: [PlacedFlowItem]
-    let maxY: CGFloat
-}
-
 private extension ReaderToken {
     var displaySegments: [TokenDisplaySegment] {
         guard
@@ -316,6 +401,17 @@ private extension ReaderToken {
         }
 
         return segments.map { TokenDisplaySegment(surface: $0.surface, reading: $0.reading) }
+    }
+
+    var rubyHTML: String {
+        displaySegments.map(\.html).joined()
+    }
+
+    var hasRuby: Bool {
+        displaySegments.contains { segment in
+            guard let reading = segment.reading else { return false }
+            return !reading.isEmpty
+        }
     }
 }
 
@@ -343,11 +439,9 @@ private enum ParagraphRubyAlignment {
         }
 
         var anchorStart: Int?
-        for index in surface.indices {
-            if surface[index].isKanaLike {
-                anchorStart = index
-                break
-            }
+        for index in surface.indices where surface[index].isKanaLike {
+            anchorStart = index
+            break
         }
 
         guard let anchorStart else {
@@ -394,9 +488,40 @@ private enum ParagraphRubyAlignment {
     }
 }
 
+private extension ReaderPartOfSpeech {
+    var cssColor: String {
+        switch self {
+        case .noun:
+            return "#f2c94c"
+        case .verb:
+            return "#4caf50"
+        case .particle:
+            return "#56ccf2"
+        case .adjective:
+            return "#ff6b9a"
+        case .adverb:
+            return "#9b51e0"
+        case .prefix:
+            return "#f2994a"
+        case .symbol:
+            return "#8e8e93"
+        case .other:
+            return "#2f80ed"
+        }
+    }
+}
+
 private extension String {
     var containsKanji: Bool {
         unicodeScalars.contains(where: \.isKanji)
+    }
+
+    var htmlEscaped: String {
+        replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
     }
 }
 
