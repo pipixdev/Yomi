@@ -70,7 +70,7 @@ private enum TokenPresentation: Identifiable {
 
     static func forToken(_ token: ReaderToken) -> Self {
         switch token.partOfSpeech {
-        case .noun, .verb:
+        case .noun, .verb, .adjective:
             return .dictionary(term: token.dictionaryLookupTerm)
         default:
             return .dictionary(term: token.surface)
