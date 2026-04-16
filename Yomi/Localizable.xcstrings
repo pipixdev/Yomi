@@ -70,7 +70,24 @@
         }
       }
     },
+    "Adjust typography and layout density for the reader and parse view." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjust typography and layout density for the reader and parse view."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调整阅读器和解析页的排版与页面密度。"
+          }
+        }
+      }
+    },
     "Adjust typography and layout density for the reader." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1234,6 +1251,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "解析"
+          }
+        }
+      }
+    },
+    "Parse Font Size" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parse Font Size"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解析页字号"
           }
         }
       }

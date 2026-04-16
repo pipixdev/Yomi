@@ -12,6 +12,7 @@ import WebKit
 struct ParagraphAnalysisView: View {
     let tokens: [ReaderToken]
 
+    @AppStorage("analysis.fontScale") private var analysisFontScale = 1.0
     @State private var selectedToken: ReaderToken?
     @State private var contentHeight: CGFloat = 1
 
@@ -43,6 +44,7 @@ struct ParagraphAnalysisView: View {
 #if canImport(UIKit)
         AnalysisTokensWebView(
             tokens: tokens,
+            fontScale: analysisFontScale,
             contentHeight: $contentHeight,
             onSelectToken: { token in
                 selectedToken = token
@@ -59,6 +61,7 @@ struct ParagraphAnalysisView: View {
 #if canImport(UIKit)
 private struct AnalysisTokensWebView: UIViewRepresentable {
     let tokens: [ReaderToken]
+    let fontScale: Double
     @Binding var contentHeight: CGFloat
     let onSelectToken: (ReaderToken) -> Void
 
@@ -96,7 +99,7 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.tokens = tokens
         context.coordinator.onSelectToken = onSelectToken
-        let html = Self.documentHTML(for: tokens)
+        let html = Self.documentHTML(for: tokens, fontScale: fontScale)
         guard context.coordinator.currentHTML != html else { return }
         context.coordinator.currentHTML = html
         webView.loadHTMLString(html, baseURL: nil)
@@ -108,7 +111,14 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
         uiView.stopLoading()
     }
 
-    private static func documentHTML(for tokens: [ReaderToken]) -> String {
+    private static func documentHTML(for tokens: [ReaderToken], fontScale: Double) -> String {
+        let clampedScale = min(max(fontScale, 0.7), 2.2)
+        let baseFontSize = 17.0 * clampedScale
+        let rubyFontSize = 10.0 * clampedScale
+        let tokenBottomSpacing = 14.0 * clampedScale
+        let tokenTrailingSpacing = 6.0
+        let plainTopPadding = 0.95 * baseFontSize
+
         let tokenHTML = tokens.enumerated().map { index, token in
             let label = "\(token.surface) \(token.reading ?? "")".trimmingCharacters(in: .whitespaces)
             return """
@@ -136,7 +146,7 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
             body {
               color: rgb(28, 28, 30);
               font-family: -apple-system, BlinkMacSystemFont, "Hiragino Mincho ProN", "YuMincho", serif;
-              font-size: 17px;
+              font-size: \(baseFontSize.cssNumber)px;
               font-weight: 600;
               line-height: 1.25;
               -webkit-text-size-adjust: 100%;
@@ -152,7 +162,7 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
               border: 0;
               background: transparent;
               padding: 0 1px;
-              margin: 0 6px 14px 0;
+              margin: 0 \(tokenTrailingSpacing.cssNumber)px \(tokenBottomSpacing.cssNumber)px 0;
               color: inherit;
               font: inherit;
               text-align: left;
@@ -167,7 +177,7 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
               padding-bottom: 3px;
               border-bottom: 2px dotted var(--token-color);
               white-space: nowrap;
-              font-size: 17px;
+              font-size: \(baseFontSize.cssNumber)px;
             }
             ruby {
               ruby-position: over;
@@ -175,10 +185,10 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
               ruby-overhang: auto;
             }
             .plain-token {
-              padding-top: 0.95em;
+              padding-top: \(plainTopPadding.cssNumber)px;
             }
             rt {
-              font-size: 10px;
+              font-size: \(rubyFontSize.cssNumber)px;
               font-weight: 500;
               line-height: 1;
               color: rgba(60, 60, 67, 0.72);
@@ -290,6 +300,12 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
 private extension String {
     var jsIdentifier: String {
         filter { $0.isLetter || $0.isNumber || $0 == "_" }
+    }
+}
+
+private extension Double {
+    var cssNumber: String {
+        String(format: "%.2f", self)
     }
 }
 #endif

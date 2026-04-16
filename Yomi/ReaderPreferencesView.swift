@@ -8,6 +8,7 @@ import SwiftUI
 struct ReaderPreferencesView: View {
     @AppStorage("app.themePreference") private var themePreferenceRawValue = AppThemePreference.system.rawValue
     @AppStorage("reader.fontScale") private var readerFontScale = 1.0
+    @AppStorage("analysis.fontScale") private var analysisFontScale = 1.0
     @AppStorage("reader.pageMarginsScale") private var readerPageMarginsScale = 1.0
     @AppStorage("reader.fontOption") private var readerFontOptionRawValue = ReaderFontOption.mincho.rawValue
 
@@ -19,6 +20,7 @@ struct ReaderPreferencesView: View {
                         ReaderSettingsDetailView(
                             readerFontOptionRawValue: $readerFontOptionRawValue,
                             readerFontScale: $readerFontScale,
+                            analysisFontScale: $analysisFontScale,
                             readerPageMarginsScale: $readerPageMarginsScale
                         )
                     } label: {
@@ -41,10 +43,15 @@ struct ReaderPreferencesView: View {
 private struct ReaderSettingsDetailView: View {
     @Binding var readerFontOptionRawValue: String
     @Binding var readerFontScale: Double
+    @Binding var analysisFontScale: Double
     @Binding var readerPageMarginsScale: Double
 
     private var fontScaleSummary: String {
         "\(Int((readerFontScale * 100).rounded()))%"
+    }
+
+    private var analysisFontScaleSummary: String {
+        "\(Int((analysisFontScale * 100).rounded()))%"
     }
 
     private var pageMarginsSummary: String {
@@ -68,13 +75,20 @@ private struct ReaderSettingsDetailView: View {
                 )
 
                 sliderRow(
+                    title: String(localized: "Parse Font Size"),
+                    valueText: analysisFontScaleSummary,
+                    value: $analysisFontScale,
+                    range: 0.7 ... 2.2
+                )
+
+                sliderRow(
                     title: String(localized: "Page Margins"),
                     valueText: pageMarginsSummary,
                     value: $readerPageMarginsScale,
                     range: 0.0 ... 2.5
                 )
             } footer: {
-                Text(String(localized: "Adjust typography and layout density for the reader."))
+                Text(String(localized: "Adjust typography and layout density for the reader and parse view."))
             }
         }
         .navigationTitle(String(localized: "Reader"))
