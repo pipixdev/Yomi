@@ -1,35 +1,116 @@
-name: iOS starter workflow
+name: iOS unsigned IPA
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+
+env:
+  SCHEME: "" 
 
 jobs:
   build:
-    name: Build on iPhone simulator
+    name: Build unsigned IPA
     runs-on: macos-15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
-      - name: Set Default Scheme
+
+      - name: Detect project and scheme
+        id: detect
+        shell: bash
         run: |
-          scheme_list=$(xcodebuild -list -json | tr -d "\n")
-          default=$(echo $scheme_list | ruby -e "require 'json'; puts JSON.parse(STDIN.gets)['project']['targets'][0]")
-          echo $default | cat >default
-          echo Using default scheme: $default
-      - name: Build
-        env:
-          scheme: ${{ 'default' }}
-          destination: ${{ 'platform=iOS Simulator,name=iPhone 16' }}
+          set -euo pipefail
+          shopt -s nullglob
+
+          workspaces=( *.xcworkspace )
+          projects=( *.xcodeproj )
+
+          if (( ${#workspaces[@]} > 0 )); then
+            filetype="workspace"
+            file="${workspaces[0]}"
+          elif (( ${#projects[@]} > 0 )); then
+            filetype="project"
+            file="${projects[0]}"
+          else
+            echo "No .xcworkspace or .xcodeproj found in repository root."
+            exit 1
+          fi
+
+          if [ -n "${SCHEME}" ]; then
+            scheme="${SCHEME}"
+          else
+            preferred="$(basename "${file}")"
+            preferred="${preferred%.*}"
+
+            info_json="$(xcodebuild -list -json -${filetype} "${file}")"
+            scheme="$(echo "${info_json}" | PREFERRED_SCHEME="${preferred}" ruby -rjson -e '
+              data = JSON.parse(STDIN.read)
+              container = data["workspace"] || data["project"] || {}
+              schemes = container["schemes"] || []
+              targets = container["targets"] || []
+              preferred = ENV["PREFERRED_SCHEME"]
+
+              value = schemes.find { |s| s == preferred } ||
+                      targets.find { |t| t == preferred } ||
+                      schemes[0] ||
+                      targets[0]
+
+              abort("No scheme or target found.") unless value
+              puts value
+            ')"
+          fi
+
+          echo "filetype=${filetype}" >> "$GITHUB_OUTPUT"
+          echo "file=${file}" >> "$GITHUB_OUTPUT"
+          echo "scheme=${scheme}" >> "$GITHUB_OUTPUT"
+
+          echo "Using ${filetype}: ${file}"
+          echo "Using scheme: ${scheme}"
+
+      - name: Build unsigned app (iphoneos)
+        shell: bash
         run: |
-          if [ $scheme = default ]; then scheme=$(cat default); fi
-          if [ "`ls -A | grep -i \\.xcworkspace\$`" ]; then filetype_parameter="workspace" && file_to_build="`ls -A | grep -i \\.xcworkspace\$`"; else filetype_parameter="project" && file_to_build="`ls -A | grep -i \\.xcodeproj\$`"; fi
-          file_to_build=`echo $file_to_build | awk '{$1=$1;print}'`
-          xcodebuild build -scheme "$scheme" -"$filetype_parameter" "$file_to_build" -destination "$destination"
+          set -euo pipefail
+
+          xcodebuild clean build \
+            -scheme "${{ steps.detect.outputs.scheme }}" \
+            -${{ steps.detect.outputs.filetype }} "${{ steps.detect.outputs.file }}" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_PATH="$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" -print -quit)"
+          if [ -z "${APP_PATH}" ]; then
+            echo "No .app found in build output."
+            exit 1
+          fi
+
+          APP_NAME="$(basename "${APP_PATH}" .app)"
+          mkdir -p Payload
+          cp -R "${APP_PATH}" Payload/
+          /usr/bin/zip -qry "${APP_NAME}-unsigned.ipa" Payload
+          rm -rf Payload
+
+          echo "Created ${APP_NAME}-unsigned.ipa"
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-ipa
+          path: ./*.ipa
