@@ -457,9 +457,22 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try session.setActive(true)
+        } catch {
+            print("Yomi TTS audio session setup failed: \(error)")
+        }
+
         speechSynthesizer.stopSpeaking(at: .immediate)
         let utterance = AVSpeechUtterance(string: trimmed)
-        utterance.voice = AVSpeechSynthesisVoice(language: "ja-JP")
+        if let japaneseVoice = AVSpeechSynthesisVoice(language: "ja-JP") {
+            utterance.voice = japaneseVoice
+        } else {
+            print("Yomi TTS warning: no ja-JP voice available, falling back to default voice.")
+            utterance.voice = AVSpeechSynthesisVoice()
+        }
         speechSynthesizer.speak(utterance)
     }
 
