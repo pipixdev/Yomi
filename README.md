@@ -23,6 +23,7 @@
 - `LibraryStore` owns the in-memory library list, import/rebuild progress UI state, import errors, book deletion, and reading progress updates.
 - Book metadata is persisted to `library.json` under Application Support.
 - Book files are stored under `Application Support/Books/<book-id>/...`.
+- On launch, `LibraryStore` also scans app-bundled EPUB assets under `Yomi/PreloadedBooks/` and auto-imports missing titles once (deduplicated by source fingerprint).
 - `LibraryStore` is the first place to inspect when working on data flow, persistence, import lifecycle, or reader progress behavior.
 
 ### Core Models
@@ -51,7 +52,7 @@
 
 - `LibraryStore.importBook` and `LibraryStore.rebuildBook` are the main workflow entry points for book processing.
 - `Yomi/EPUBImportNormalizer.swift` rewrites imported EPUB content into a reading-optimized version.
-- The normalizer removes publisher styling, injects app-controlled reading styles, promotes likely chapter headings, and adds paragraph action slots.
+- The normalizer removes publisher styling, injects app-controlled reading styles, promotes likely chapter headings, converts Aozora-style `<br>`-delimited body text into paragraph blocks when needed, and adds paragraph action slots.
 - Normalized output is stored alongside the original EPUB so the app can keep both the source asset and a processed reading version.
 
 ### Japanese Text Processing

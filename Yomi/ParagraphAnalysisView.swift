@@ -140,11 +140,22 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
         let plainTopPadding = 0.95 * baseFontSize
 
         let tokenHTML = tokens.enumerated().map { index, token in
-            let label = "\(token.surface) \(token.reading ?? "")".trimmingCharacters(in: .whitespaces)
+            let tokenClasses = "token \(token.hasRuby ? "has-ruby" : "plain-token")"
+            let lineClass = token.isInteractive ? "token-line" : "token-line token-line-static"
+
+            if token.isInteractive {
+                let label = "\(token.surface) \(token.reading ?? "")".trimmingCharacters(in: .whitespaces)
+                return """
+                <button class="\(tokenClasses)" type="button" data-index="\(index)" aria-label="\(label.htmlEscaped)">
+                  <span class="\(lineClass)" style="--token-color: \(token.partOfSpeech.cssColor);">\(token.rubyHTML)</span>
+                </button>
+                """
+            }
+
             return """
-            <button class="token \(token.hasRuby ? "has-ruby" : "plain-token")" type="button" data-index="\(index)" aria-label="\(label.htmlEscaped)">
-              <span class="token-line" style="--token-color: \(token.partOfSpeech.cssColor);">\(token.rubyHTML)</span>
-            </button>
+            <span class="\(tokenClasses)" aria-hidden="true">
+              <span class="\(lineClass)" style="--token-color: \(token.partOfSpeech.cssColor);">\(token.rubyHTML)</span>
+            </span>
             """
         }.joined(separator: "\n")
 
@@ -198,6 +209,9 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
               border-bottom: 2px dotted var(--token-color);
               white-space: nowrap;
               font-size: \(baseFontSize.cssNumber)px;
+            }
+            .token-line-static {
+              border-bottom: 0;
             }
             ruby {
               ruby-position: over;
@@ -371,6 +385,10 @@ private struct DictionaryLookupView: UIViewControllerRepresentable {
 #endif
 
 private extension ReaderToken {
+    var isInteractive: Bool {
+        partOfSpeech != .symbol
+    }
+
     var dictionaryLookupTerm: String {
         dictionaryForm ?? surface
     }

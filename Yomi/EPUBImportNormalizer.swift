@@ -10,7 +10,7 @@ import ReadiumShared
 import ReadiumStreamer
 
 final class EPUBImportNormalizer {
-    static let version = 2
+    static let version = 3
 
     private let rubyPipeline = JapaneseRubyAnnotationPipeline()
 
@@ -58,6 +58,7 @@ final class EPUBImportNormalizer {
         var normalized = html
         normalized = Self.removeHeadStyles(from: normalized)
         normalized = Self.removeInlineStyles(from: normalized)
+        normalized = Self.convertLineBreakParagraphsIfNeeded(in: normalized)
         normalized = Self.promoteLeadingHeadingCandidate(in: normalized)
         normalized = Self.injectParagraphActionSlots(into: normalized)
         normalized = Self.injectNormalizedStyle(into: normalized)
@@ -154,6 +155,56 @@ final class EPUBImportNormalizer {
         }
 
         return html
+    }
+
+    private static func convertLineBreakParagraphsIfNeeded(in html: String) -> String {
+        guard html.range(of: #"<p\b"#, options: [.regularExpression, .caseInsensitive]) == nil else {
+            return html
+        }
+
+        let regex = try? NSRegularExpression(
+            pattern: #"(?is)<div\b([^>]*)class\s*=\s*["'][^"']*\bmain_text\b[^"']*["']([^>]*)>(.*?)</div>"#
+        )
+        guard let regex else {
+            return html
+        }
+
+        let range = NSRange(html.startIndex..<html.endIndex, in: html)
+        guard let match = regex.firstMatch(in: html, options: [], range: range),
+              let fullRange = Range(match.range(at: 0), in: html),
+              let leadingAttrsRange = Range(match.range(at: 1), in: html),
+              let trailingAttrsRange = Range(match.range(at: 2), in: html),
+              let innerRange = Range(match.range(at: 3), in: html) else {
+            return html
+        }
+
+        let innerHTML = String(html[innerRange])
+        let normalizedBreaks = replacing(
+            pattern: #"(?i)<br\s*/?>\s*(?:\r?\n\s*)*"#,
+            in: innerHTML,
+            with: "\u{2028}"
+        )
+        let rawSegments = normalizedBreaks.components(separatedBy: "\u{2028}")
+        let paragraphs = rawSegments.compactMap { segment -> String? in
+            let trimmed = segment.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                return nil
+            }
+            return "<p>\(trimmed)</p>"
+        }
+
+        guard paragraphs.count >= 2 else {
+            return html
+        }
+
+        let mergedAttributes = (String(html[leadingAttrsRange]) + String(html[trailingAttrsRange]))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let attributesSuffix = mergedAttributes.isEmpty ? "" : " \(mergedAttributes)"
+        let replacement = "<div\(attributesSuffix)>\(paragraphs.joined())</div>"
+
+        var updatedHTML = html
+        updatedHTML.replaceSubrange(fullRange, with: replacement)
+        return updatedHTML
     }
 
     private static func plainText(from html: String) -> String {
@@ -307,6 +358,9 @@ final class EPUBImportNormalizer {
         }
         ruby, rb, rt, rp {
           white-space: normal !important;
+        }
+        rt[data-yomi-ruby-source="generated"] {
+          opacity: 0.66 !important;
         }
         </style>
         """

@@ -371,9 +371,9 @@ private struct JapaneseRubyHTMLAnnotator {
     }
 
     nonisolated private func rubyHTML(base: String, reading: String) -> String {
-        #"<ruby class="yomi-ruby"><rb>"#
+        #"<ruby class="yomi-ruby" data-yomi-ruby-source="generated"><rb>"#
             + escapeHTML(base)
-            + #"</rb><rt class="yomi-rt">"#
+            + #"</rb><rt class="yomi-rt" data-yomi-ruby-source="generated">"#
             + escapeHTML(reading)
             + "</rt></ruby>"
     }

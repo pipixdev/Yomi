@@ -26,6 +26,7 @@ final class LibraryStore: ObservableObject {
 
     private let manifestURL: URL
     private let fileManager: FileManager
+    private let bundledBooksFolderName = "PreloadedBooks"
 
 #if canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
     private var importer = ReadiumLibraryImporter()
@@ -46,6 +47,10 @@ final class LibraryStore: ObservableObject {
         }
 
         manifestURL = resolvedManifestURL
+
+        Task { [weak self] in
+            await self?.importBundledBooksIfNeeded()
+        }
     }
 
     func book(id: UUID) -> BookRecord? {
@@ -249,6 +254,57 @@ final class LibraryStore: ObservableObject {
 
     private func applicationSupportBaseURL() -> URL? {
         try? fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+    }
+
+    private func bundledEPUBURLs() -> [URL] {
+        let nestedURLs = Bundle.main.urls(forResourcesWithExtension: "epub", subdirectory: bundledBooksFolderName) ?? []
+        let rootURLs = Bundle.main.urls(forResourcesWithExtension: "epub", subdirectory: nil) ?? []
+        let uniqueByPath = Dictionary(
+            (nestedURLs + rootURLs).map { ($0.path, $0) },
+            uniquingKeysWith: { existing, _ in existing }
+        )
+
+        return Array(uniqueByPath.values)
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+    }
+
+    private func importBundledBooksIfNeeded() async {
+#if canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
+        let bundledEPUBs = bundledEPUBURLs()
+        guard !bundledEPUBs.isEmpty else { return }
+
+        var didImportAnyBook = false
+
+        for epubURL in bundledEPUBs {
+            do {
+                let fingerprint = try fileFingerprint(for: epubURL)
+                guard books.contains(where: { $0.sourceFingerprint == fingerprint }) == false else {
+                    continue
+                }
+
+                let importedBook = try await importer.importBook(
+                    bookID: UUID(),
+                    from: epubURL,
+                    sourceFingerprint: fingerprint,
+                    using: fileManager,
+                    progress: { _, _ in }
+                )
+
+                books.insert(importedBook, at: 0)
+                didImportAnyBook = true
+            } catch {
+                importError = error.localizedDescription
+            }
+        }
+
+        guard didImportAnyBook else { return }
+        books.sort { $0.importedAt > $1.importedAt }
+        do {
+            try persist()
+        } catch {
+            importError = error.localizedDescription
+        }
+#endif
     }
 }
 
