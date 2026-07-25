@@ -73,6 +73,7 @@
 - Reader preferences such as theme, font, parse font size, and page margins are stored with `@AppStorage`.
 - Reader location changes are pushed back into `LibraryStore` so progress can be restored later.
 - Paragraph actions are injected into normalized HTML and currently support copy, paragraph TTS playback, and opening `ParagraphAnalysisView`.
+- Paragraph TTS uses `AVSpeechSynthesizer` by default. For local testing, `Yomi/EdgeTTSClient.swift` can directly use the same Microsoft Edge consumer WebSocket service as `rany2/edge-tts`; its setting is disabled by default, and network or protocol failures fall back to the system voice. Successful Edge TTS responses are stored as MP3 files under the app's caches directory using a versioned hash of the voice, output format, and paragraph text, so repeated playback avoids another network request.
 - `Yomi/ParagraphAnalysisView.swift` shows MeCab tokenization results for one paragraph and opens native iOS dictionary lookup when a token is tapped.
 - Readium integration is effectively iOS-first. Non-iOS builds may show fallback unavailable states instead of a working reader.
 

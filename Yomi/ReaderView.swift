@@ -126,6 +126,8 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     private var isChromeVisible = false
     private var hideChromeTask: Task<Void, Never>?
     private let speechSynthesizer = AVSpeechSynthesizer()
+    private var speechTask: Task<Void, Never>?
+    private var edgeAudioPlayer: AVAudioPlayer?
     private let textAnalyzer = JapaneseTextAnalyzer()
 
     init(
@@ -181,6 +183,8 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     }
 
     deinit {
+        speechTask?.cancel()
+        edgeAudioPlayer?.stop()
         speechSynthesizer.stopSpeaking(at: .immediate)
         publication?.close()
     }
@@ -457,6 +461,36 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        prepareSpeechAudioSession()
+        speechTask?.cancel()
+        edgeAudioPlayer?.stop()
+        edgeAudioPlayer = nil
+        speechSynthesizer.stopSpeaking(at: .immediate)
+
+        guard UserDefaults.standard.bool(forKey: EdgeTTSClient.enabledDefaultsKey) else {
+            speakWithSystemVoice(trimmed)
+            return
+        }
+
+        speechTask = Task { [weak self] in
+            do {
+                let audio = try await EdgeTTSClient.synthesize(trimmed)
+                try Task.checkCancellation()
+                let player = try AVAudioPlayer(data: audio)
+                self?.edgeAudioPlayer = player
+                player.prepareToPlay()
+                player.play()
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                print("Yomi Edge TTS failed, falling back to the system voice: \(error)")
+                self?.speakWithSystemVoice(trimmed)
+            }
+        }
+    }
+
+    private func prepareSpeechAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
@@ -464,9 +498,10 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         } catch {
             print("Yomi TTS audio session setup failed: \(error)")
         }
+    }
 
-        speechSynthesizer.stopSpeaking(at: .immediate)
-        let utterance = AVSpeechUtterance(string: trimmed)
+    private func speakWithSystemVoice(_ text: String) {
+        let utterance = AVSpeechUtterance(string: text)
         if let japaneseVoice = AVSpeechSynthesisVoice(language: "ja-JP") {
             utterance.voice = japaneseVoice
         } else {

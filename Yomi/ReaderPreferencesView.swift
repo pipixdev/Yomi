@@ -11,6 +11,7 @@ struct ReaderPreferencesView: View {
     @AppStorage("analysis.fontScale") private var analysisFontScale = 1.0
     @AppStorage("reader.pageMarginsScale") private var readerPageMarginsScale = 1.0
     @AppStorage("reader.fontOption") private var readerFontOptionRawValue = ReaderFontOption.mincho.rawValue
+    @AppStorage(EdgeTTSClient.enabledDefaultsKey) private var isEdgeTTSEnabled = false
 
     var body: some View {
         NavigationStack {
@@ -21,7 +22,8 @@ struct ReaderPreferencesView: View {
                             readerFontOptionRawValue: $readerFontOptionRawValue,
                             readerFontScale: $readerFontScale,
                             analysisFontScale: $analysisFontScale,
-                            readerPageMarginsScale: $readerPageMarginsScale
+                            readerPageMarginsScale: $readerPageMarginsScale,
+                            isEdgeTTSEnabled: $isEdgeTTSEnabled
                         )
                     } label: {
                         Label(String(localized: "Reader"), systemImage: "textformat.size")
@@ -45,6 +47,7 @@ private struct ReaderSettingsDetailView: View {
     @Binding var readerFontScale: Double
     @Binding var analysisFontScale: Double
     @Binding var readerPageMarginsScale: Double
+    @Binding var isEdgeTTSEnabled: Bool
 
     private var fontScaleSummary: String {
         "\(Int((readerFontScale * 100).rounded()))%"
@@ -89,6 +92,12 @@ private struct ReaderSettingsDetailView: View {
                 )
             } footer: {
                 Text(String(localized: "Adjust typography and layout density for the reader and parse view."))
+            }
+
+            Section {
+                Toggle(String(localized: "Experimental Edge Online Voice"), isOn: $isEdgeTTSEnabled)
+            } footer: {
+                Text(String(localized: "When enabled, paragraph text is sent to Microsoft's online speech service. Failed requests fall back to the system voice."))
             }
         }
         .navigationTitle(String(localized: "Reader"))

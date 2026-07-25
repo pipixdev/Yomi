@@ -624,6 +624,22 @@
         }
       }
     },
+    "Experimental Edge Online Voice" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Experimental Edge Online Voice"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实验性 Edge 在线语音"
+          }
+        }
+      }
+    },
     "EPUB" : {
 
     },
@@ -1985,6 +2001,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "类型"
+          }
+        }
+      }
+    },
+    "When enabled, paragraph text is sent to Microsoft's online speech service. Failed requests fall back to the system voice." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When enabled, paragraph text is sent to Microsoft's online speech service. Failed requests fall back to the system voice."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启后，段落文本将发送到微软在线语音服务；请求失败时自动使用系统语音。"
           }
         }
       }
