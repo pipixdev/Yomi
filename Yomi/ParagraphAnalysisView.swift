@@ -10,11 +10,42 @@ import WebKit
 #endif
 
 struct ParagraphAnalysisView: View {
-    let tokens: [ReaderToken]
+    let paragraphs: [String]
+    let onParagraphChange: (Int) -> Void
+    private let textAnalyzer: JapaneseTextAnalyzer
 
     @AppStorage("analysis.fontScale") private var analysisFontScale = 1.0
     @State private var activePresentation: TokenPresentation?
     @State private var contentHeight: CGFloat = 1
+    @State private var currentIndex: Int
+    @State private var tokens: [ReaderToken]
+#if canImport(UIKit)
+    @StateObject private var speechPlayback = SpeechPlaybackController()
+    @State private var highlightedSpeechRange: NSRange?
+#endif
+
+    init(
+        paragraphs: [String],
+        initialIndex: Int,
+        onParagraphChange: @escaping (Int) -> Void
+    ) {
+        let normalizedParagraphs = paragraphs
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let safeParagraphs = normalizedParagraphs.isEmpty ? [""] : normalizedParagraphs
+        let safeIndex = min(max(initialIndex, 0), safeParagraphs.count - 1)
+        let analyzer = JapaneseTextAnalyzer()
+
+        self.paragraphs = safeParagraphs
+        self.onParagraphChange = onParagraphChange
+        textAnalyzer = analyzer
+        _currentIndex = State(initialValue: safeIndex)
+        _tokens = State(initialValue: analyzer.tokens(for: safeParagraphs[safeIndex]))
+    }
+
+    private var speechText: String {
+        tokens.map(\.surface).joined()
+    }
 
     var body: some View {
         ScrollView {
@@ -26,17 +57,87 @@ struct ParagraphAnalysisView: View {
                 .padding(20)
             } else {
                 tokenContent
+                    .id(currentIndex)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 16)
+                    .transition(.opacity)
             }
         }
         .navigationTitle(String(localized: "Parse"))
         .navigationBarTitleDisplayMode(.inline)
+#if canImport(UIKit)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 0) {
+                    Text(String(localized: "Parse"))
+                        .font(.headline)
+                    Text("\(currentIndex + 1) / \(paragraphs.count)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    speechPlayback.toggle(speechText)
+                } label: {
+                    Image(systemName: speechPlayback.isSpeaking ? "stop.fill" : "speaker.wave.2")
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .accessibilityLabel(
+                    speechPlayback.isSpeaking
+                        ? String(localized: "Stop reading")
+                        : String(localized: "Start reading")
+                )
+            }
+        }
+        .onAppear {
+            speechPlayback.onRangeChange = { range in
+                highlightedSpeechRange = range
+            }
+        }
+        .onDisappear {
+            speechPlayback.stop()
+        }
+#endif
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 30)
+                .onEnded(handleParagraphSwipe)
+        )
         .sheet(item: $activePresentation) { presentation in
             TokenPresentationSheet(presentation: presentation)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+    }
+
+    private func handleParagraphSwipe(_ value: DragGesture.Value) {
+        let horizontalDistance = value.translation.width
+        let verticalDistance = value.translation.height
+        guard
+            abs(horizontalDistance) >= 55,
+            abs(horizontalDistance) > abs(verticalDistance)
+        else {
+            return
+        }
+
+        let proposedIndex = horizontalDistance < 0
+            ? currentIndex + 1
+            : currentIndex - 1
+        guard paragraphs.indices.contains(proposedIndex) else { return }
+
+#if canImport(UIKit)
+        speechPlayback.stop()
+        highlightedSpeechRange = nil
+#endif
+        activePresentation = nil
+        contentHeight = 1
+
+        withAnimation(.easeInOut(duration: 0.18)) {
+            currentIndex = proposedIndex
+            tokens = textAnalyzer.tokens(for: paragraphs[proposedIndex])
+        }
+        onParagraphChange(proposedIndex)
     }
 
     @ViewBuilder
@@ -45,6 +146,7 @@ struct ParagraphAnalysisView: View {
         AnalysisTokensWebView(
             tokens: tokens,
             fontScale: analysisFontScale,
+            highlightedRange: highlightedSpeechRange,
             contentHeight: $contentHeight,
             onSelectToken: { token in
                 activePresentation = .forToken(token)
@@ -82,6 +184,7 @@ private enum TokenPresentation: Identifiable {
 private struct AnalysisTokensWebView: UIViewRepresentable {
     let tokens: [ReaderToken]
     let fontScale: Double
+    let highlightedRange: NSRange?
     @Binding var contentHeight: CGFloat
     let onSelectToken: (ReaderToken) -> Void
 
@@ -119,8 +222,12 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.tokens = tokens
         context.coordinator.onSelectToken = onSelectToken
+        context.coordinator.highlightedRange = highlightedRange
         let html = Self.documentHTML(for: tokens, fontScale: fontScale)
-        guard context.coordinator.currentHTML != html else { return }
+        guard context.coordinator.currentHTML != html else {
+            context.coordinator.applyHighlight(in: webView)
+            return
+        }
         context.coordinator.currentHTML = html
         webView.loadHTMLString(html, baseURL: nil)
     }
@@ -139,21 +246,25 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
         let tokenTrailingSpacing = 6.0
         let plainTopPadding = 0.95 * baseFontSize
 
+        var utf16Offset = 0
         let tokenHTML = tokens.enumerated().map { index, token in
             let tokenClasses = "token \(token.hasRuby ? "has-ruby" : "plain-token")"
             let lineClass = token.isInteractive ? "token-line" : "token-line token-line-static"
+            let startOffset = utf16Offset
+            utf16Offset += token.surface.utf16.count
+            let endOffset = utf16Offset
 
             if token.isInteractive {
                 let label = "\(token.surface) \(token.reading ?? "")".trimmingCharacters(in: .whitespaces)
                 return """
-                <button class="\(tokenClasses)" type="button" data-index="\(index)" aria-label="\(label.htmlEscaped)">
+                <button class="\(tokenClasses)" type="button" data-index="\(index)" data-start="\(startOffset)" data-end="\(endOffset)" aria-label="\(label.htmlEscaped)">
                   <span class="\(lineClass)" style="--token-color: \(token.partOfSpeech.cssColor);">\(token.rubyHTML)</span>
                 </button>
                 """
             }
 
             return """
-            <span class="\(tokenClasses)" aria-hidden="true">
+            <span class="\(tokenClasses)" data-start="\(startOffset)" data-end="\(endOffset)" aria-hidden="true">
               <span class="\(lineClass)" style="--token-color: \(token.partOfSpeech.cssColor);">\(token.rubyHTML)</span>
             </span>
             """
@@ -213,6 +324,11 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
             .token-line-static {
               border-bottom: 0;
             }
+            .token.is-speaking .token-line {
+              border-radius: 7px;
+              background: color-mix(in srgb, #ffcc33 58%, transparent);
+              box-shadow: 0 0 0 3px color-mix(in srgb, #ffcc33 22%, transparent);
+            }
             ruby {
               ruby-position: over;
               ruby-align: center;
@@ -236,6 +352,15 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
           <script>
             (() => {
               const handler = window.webkit?.messageHandlers?.\(Coordinator.selectHandlerName.jsIdentifier);
+              window.yomiHighlightRange = (start, length) => {
+                const lower = Number(start) || 0;
+                const upper = lower + (Number(length) || 0);
+                document.querySelectorAll('.token').forEach(token => {
+                  const tokenStart = Number(token.dataset.start);
+                  const tokenEnd = Number(token.dataset.end);
+                  token.classList.toggle('is-speaking', tokenStart < upper && tokenEnd > lower);
+                });
+              };
               const reportHeight = () => {
                 const root = document.documentElement;
                 const body = document.body;
@@ -271,6 +396,7 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
         @Binding var contentHeight: CGFloat
         var onSelectToken: (ReaderToken) -> Void
         var currentHTML = ""
+        var highlightedRange: NSRange?
 
         init(
             tokens: [ReaderToken],
@@ -284,6 +410,7 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             updateHeight(from: webView)
+            applyHighlight(in: webView)
         }
 
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
@@ -327,6 +454,13 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
                     }
                 }
             }
+        }
+
+        func applyHighlight(in webView: WKWebView) {
+            let range = highlightedRange ?? NSRange(location: 0, length: 0)
+            webView.evaluateJavaScript(
+                "window.yomiHighlightRange?.(\(range.location), \(range.length));"
+            )
         }
     }
 }

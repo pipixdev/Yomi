@@ -107,7 +107,7 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
     }
 }
 
-private final class ReadiumReaderViewController: UIViewController, EPUBNavigatorDelegate, UIGestureRecognizerDelegate, WKScriptMessageHandler {
+private final class ReadiumReaderViewController: UIViewController, EPUBNavigatorDelegate, WKScriptMessageHandler {
     private let bookID: UUID
     private let normalizedURL: URL?
     private let epubURL: URL
@@ -123,12 +123,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
 
     private var publication: Publication?
     private var navigator: EPUBNavigatorViewController?
-    private var isChromeVisible = false
-    private var hideChromeTask: Task<Void, Never>?
-    private let speechSynthesizer = AVSpeechSynthesizer()
-    private var speechTask: Task<Void, Never>?
-    private var edgeAudioPlayer: AVAudioPlayer?
-    private let textAnalyzer = JapaneseTextAnalyzer()
+    private var pendingAnalysisParagraphIndex: Int?
 
     init(
         bookID: UUID,
@@ -161,10 +156,10 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        edgesForExtendedLayout = []
         navigationItem.largeTitleDisplayMode = .never
         setupSpinner()
         setupNavigationChrome()
-        setupTapToToggleChrome()
 
         Task {
             await loadReader()
@@ -173,19 +168,15 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        hideChrome(animated: false)
+        navigationController?.setNavigationBarHidden(false, animated: animated)
     }
 
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        hideChromeTask?.cancel()
-        hideChromeTask = nil
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        revealPendingAnalysisParagraph()
     }
 
     deinit {
-        speechTask?.cancel()
-        edgeAudioPlayer?.stop()
-        speechSynthesizer.stopSpeaking(at: .immediate)
         publication?.close()
     }
 
@@ -209,13 +200,6 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         closeItem.accessibilityLabel = String(localized: "Close Reader")
         navigationItem.leftBarButtonItem = closeItem
         navigationItem.title = nil
-    }
-
-    private func setupTapToToggleChrome() {
-        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleScreenTap(_:)))
-        tapGesture.cancelsTouchesInView = false
-        tapGesture.delegate = self
-        view.addGestureRecognizer(tapGesture)
     }
 
     private func loadReader() async {
@@ -259,7 +243,6 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             embed(navigator)
             spinner.stopAnimating()
             spinner.removeFromSuperview()
-            showChrome(animated: false)
         } catch {
             showError(error.localizedDescription)
         }
@@ -330,63 +313,27 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         showError(error.localizedDescription)
     }
 
+    func navigatorContentInset(_ navigator: VisualNavigator) -> UIEdgeInsets? {
+        UIEdgeInsets(
+            top: 16,
+            left: 0,
+            bottom: max(view.safeAreaInsets.bottom, 20),
+            right: 0
+        )
+    }
+
     @objc
     private func closeReaderTapped() {
         onClose()
     }
 
-    @objc
-    private func handleScreenTap(_ gesture: UITapGestureRecognizer) {
-        toggleChrome()
-    }
-
-    private func toggleChrome() {
-        if isChromeVisible {
-            hideChrome(animated: true)
-        } else {
-            showChrome(animated: true)
-        }
-    }
-
-    private func showChrome(animated: Bool) {
-        hideChromeTask?.cancel()
-        isChromeVisible = true
-        navigationController?.setNavigationBarHidden(false, animated: animated)
-
-        hideChromeTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(3))
-            guard let self, !Task.isCancelled else { return }
-            await MainActor.run {
-                self.hideChrome(animated: true)
-            }
-        }
-    }
-
-    private func hideChrome(animated: Bool) {
-        hideChromeTask?.cancel()
-        hideChromeTask = nil
-        isChromeVisible = false
-        navigationController?.setNavigationBarHidden(true, animated: animated)
-    }
-
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        true
-    }
-
     func navigator(_ navigator: EPUBNavigatorViewController, setupUserScripts userContentController: WKUserContentController) {
-        userContentController.removeScriptMessageHandler(forName: Self.speakParagraphHandlerName)
         userContentController.removeScriptMessageHandler(forName: Self.analyzeParagraphHandlerName)
-        userContentController.add(self, name: Self.speakParagraphHandlerName)
         userContentController.add(self, name: Self.analyzeParagraphHandlerName)
         userContentController.addUserScript(
             WKUserScript(
-                source: Self.paragraphActionsScript(
-                    copyParagraphLabel: String(localized: "Copy paragraph"),
-                    readParagraphLabel: String(localized: "Read paragraph"),
-                    analyzeParagraphLabel: String(localized: "Analyze paragraph"),
-                    copyIconDataURI: Self.paragraphIconDataURI(systemName: "doc.on.doc"),
-                    readIconDataURI: Self.paragraphIconDataURI(systemName: "speaker.wave.2"),
-                    analyzeIconDataURI: Self.paragraphIconDataURI(systemName: "text.magnifyingglass")
+                source: Self.paragraphAnalysisScript(
+                    analyzeParagraphLabel: String(localized: "Analyze paragraph")
                 ),
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
@@ -395,24 +342,19 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard
-            message.name == Self.speakParagraphHandlerName || message.name == Self.analyzeParagraphHandlerName
-        else {
+        guard message.name == Self.analyzeParagraphHandlerName else {
             return
         }
 
         guard
             let body = message.body as? [String: Any],
-            let text = body["text"] as? String
+            let paragraphs = body["paragraphs"] as? [String],
+            let index = body["index"] as? Int
         else {
             return
         }
 
-        if message.name == Self.speakParagraphHandlerName {
-            requestParagraphSpeech(text: text)
-        } else {
-            presentParagraphAnalysis(for: text)
-        }
+        presentParagraphAnalysis(paragraphs: paragraphs, initialIndex: index)
     }
 
     func applyUserPreferences(fontScale: Double, pageMarginsScale: Double, fontOptionRawValue: String) {
@@ -457,224 +399,108 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         }
     }
 
-    private func requestParagraphSpeech(text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        prepareSpeechAudioSession()
-        speechTask?.cancel()
-        edgeAudioPlayer?.stop()
-        edgeAudioPlayer = nil
-        speechSynthesizer.stopSpeaking(at: .immediate)
-
-        guard UserDefaults.standard.bool(forKey: EdgeTTSClient.enabledDefaultsKey) else {
-            speakWithSystemVoice(trimmed)
+    private func presentParagraphAnalysis(paragraphs: [String], initialIndex: Int) {
+        guard !paragraphs.isEmpty, paragraphs.indices.contains(initialIndex) else {
             return
         }
 
-        speechTask = Task { [weak self] in
-            do {
-                let audio = try await EdgeTTSClient.synthesize(trimmed)
-                try Task.checkCancellation()
-                let player = try AVAudioPlayer(data: audio)
-                self?.edgeAudioPlayer = player
-                player.prepareToPlay()
-                player.play()
-            } catch is CancellationError {
-                return
-            } catch {
-                guard !Task.isCancelled else { return }
-                print("Yomi Edge TTS failed, falling back to the system voice: \(error)")
-                self?.speakWithSystemVoice(trimmed)
-            }
-        }
-    }
-
-    private func prepareSpeechAudioSession() {
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-            try session.setActive(true)
-        } catch {
-            print("Yomi TTS audio session setup failed: \(error)")
-        }
-    }
-
-    private func speakWithSystemVoice(_ text: String) {
-        let utterance = AVSpeechUtterance(string: text)
-        if let japaneseVoice = AVSpeechSynthesisVoice(language: "ja-JP") {
-            utterance.voice = japaneseVoice
-        } else {
-            print("Yomi TTS warning: no ja-JP voice available, falling back to default voice.")
-            utterance.voice = AVSpeechSynthesisVoice()
-        }
-        speechSynthesizer.speak(utterance)
-    }
-
-    private func presentParagraphAnalysis(for text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return
-        }
-
-        hideChromeTask?.cancel()
-        hideChromeTask = nil
-        isChromeVisible = true
+        pendingAnalysisParagraphIndex = initialIndex
         navigationController?.setNavigationBarHidden(false, animated: false)
 
         let controller = ReaderAnalysisHostingController(
             rootView: ParagraphAnalysisView(
-                tokens: textAnalyzer.tokens(for: trimmed)
+                paragraphs: paragraphs,
+                initialIndex: initialIndex,
+                onParagraphChange: { [weak self] index in
+                    self?.pendingAnalysisParagraphIndex = index
+                }
             )
         )
         controller.title = String(localized: "Parse")
         navigationController?.pushViewController(controller, animated: true)
     }
 
-    private static let speakParagraphHandlerName = "yomiSpeakParagraph"
+    private func revealPendingAnalysisParagraph() {
+        guard let index = pendingAnalysisParagraphIndex else { return }
+        pendingAnalysisParagraphIndex = nil
+
+        Task { [weak self] in
+            _ = await self?.navigator?.evaluateJavaScript(
+                "window.yomiRevealParagraph?.(\(index));"
+            )
+        }
+    }
+
     private static let analyzeParagraphHandlerName = "yomiAnalyzeParagraph"
 
-    private static func paragraphActionsScript(
-        copyParagraphLabel: String,
-        readParagraphLabel: String,
-        analyzeParagraphLabel: String,
-        copyIconDataURI: String,
-        readIconDataURI: String,
-        analyzeIconDataURI: String
+    private static func paragraphAnalysisScript(
+        analyzeParagraphLabel: String
     ) -> String {
-        let escapedCopyLabel = copyParagraphLabel.javascriptStringEscaped()
-        let escapedReadLabel = readParagraphLabel.javascriptStringEscaped()
         let escapedAnalyzeLabel = analyzeParagraphLabel.javascriptStringEscaped()
-        let escapedCopyIconDataURI = copyIconDataURI.javascriptStringEscaped()
-        let escapedReadIconDataURI = readIconDataURI.javascriptStringEscaped()
-        let escapedAnalyzeIconDataURI = analyzeIconDataURI.javascriptStringEscaped()
         return """
     (() => {
       const SLOT_SELECTOR = '.yomi-paragraph-slot';
-      const TOOLBAR_CLASS = 'yomi-paragraph-toolbar';
-      const BUTTON_CLASS = 'yomi-paragraph-action';
-      const BUTTON_ICON_CLASS = 'yomi-paragraph-action-icon';
-      const SPEAK_HANDLER_NAME = '\(Self.speakParagraphHandlerName)';
       const ANALYZE_HANDLER_NAME = '\(Self.analyzeParagraphHandlerName)';
+      const ANALYZE_LABEL = '\(escapedAnalyzeLabel)';
 
-      const actions = [
-        {
-          id: 'copy',
-          iconDataURI: '\(escapedCopyIconDataURI)',
-          label: '\(escapedCopyLabel)',
-          perform: async (slot, button) => {
-            const text = (slot.dataset.yomiParagraphText || '').trim();
-            if (!text) return false;
+      const paragraphEntries = () => Array.from(document.querySelectorAll(SLOT_SELECTOR))
+        .map(slot => ({
+          slot,
+          target: slot.previousElementSibling,
+          text: (slot.dataset.yomiParagraphText || '').trim()
+        }))
+        .filter(entry => entry.target && entry.text);
 
-            const copyWithClipboardApi = async () => {
-              if (!navigator.clipboard || !navigator.clipboard.writeText) return false;
-              try {
-                await navigator.clipboard.writeText(text);
-                return true;
-              } catch {
-                return false;
-              }
-            };
+      const openAnalysis = target => {
+        const entries = paragraphEntries();
+        const index = entries.findIndex(entry => entry.target === target);
+        if (index < 0) return;
 
-            const copyWithSelectionFallback = () => {
-              const textarea = document.createElement('textarea');
-              textarea.value = text;
-              textarea.setAttribute('readonly', 'readonly');
-              textarea.style.position = 'fixed';
-              textarea.style.opacity = '0';
-              textarea.style.pointerEvents = 'none';
-              document.body.appendChild(textarea);
-              textarea.focus();
-              textarea.select();
-              let copied = false;
-              try {
-                copied = document.execCommand('copy');
-              } catch {
-                copied = false;
-              }
-              textarea.remove();
-              return copied;
-            };
-
-            const copied = await copyWithClipboardApi() || copyWithSelectionFallback();
-            if (copied) {
-              button.classList.add('is-feedback');
-              window.setTimeout(() => button.classList.remove('is-feedback'), 900);
-            }
-            return copied;
-          }
-        },
-        {
-          id: 'speak',
-          iconDataURI: '\(escapedReadIconDataURI)',
-          label: '\(escapedReadLabel)',
-          perform: async (slot, button) => {
-            const text = (slot.dataset.yomiParagraphText || '').trim();
-            if (!text) return false;
-            const handler = window.webkit?.messageHandlers?.[SPEAK_HANDLER_NAME];
-            if (!handler || !handler.postMessage) return false;
-            try {
-              handler.postMessage({ text });
-              button.classList.add('is-feedback');
-              window.setTimeout(() => button.classList.remove('is-feedback'), 900);
-              return true;
-            } catch {
-              return false;
-            }
-          }
-        },
-        {
-          id: 'analyze',
-          iconDataURI: '\(escapedAnalyzeIconDataURI)',
-          label: '\(escapedAnalyzeLabel)',
-          perform: async (slot, button) => {
-            const text = (slot.dataset.yomiParagraphText || '').trim();
-            if (!text) return false;
-            const handler = window.webkit?.messageHandlers?.[ANALYZE_HANDLER_NAME];
-            if (!handler || !handler.postMessage) return false;
-            try {
-              handler.postMessage({ text });
-              button.classList.add('is-feedback');
-              window.setTimeout(() => button.classList.remove('is-feedback'), 900);
-              return true;
-            } catch {
-              return false;
-            }
-          }
-        }
-      ];
-
-      const buildButton = (action, slot) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = BUTTON_CLASS;
-        button.dataset.yomiAction = action.id;
-        const icon = document.createElement('img');
-        icon.className = BUTTON_ICON_CLASS;
-        icon.src = action.iconDataURI;
-        icon.alt = '';
-        icon.setAttribute('aria-hidden', 'true');
-        button.appendChild(icon);
-        button.setAttribute('aria-label', action.label);
-        button.setAttribute('title', action.label);
-        button.addEventListener('click', async event => {
-          event.preventDefault();
-          event.stopPropagation();
-          await action.perform(slot, button);
+        const handler = window.webkit?.messageHandlers?.[ANALYZE_HANDLER_NAME];
+        if (!handler || !handler.postMessage) return;
+        handler.postMessage({
+          paragraphs: entries.map(entry => entry.text),
+          index
         });
-        return button;
+      };
+
+      window.yomiRevealParagraph = index => {
+        const entries = paragraphEntries();
+        const entry = entries[Number(index)];
+        if (!entry?.target) return false;
+        entry.target.scrollIntoView({
+          behavior: 'auto',
+          block: 'center',
+          inline: 'center'
+        });
+        return true;
       };
 
       const hydrateSlot = slot => {
-        if (slot.dataset.yomiActionsBound === '1') return;
-        slot.dataset.yomiActionsBound = '1';
+        slot.style.setProperty('display', 'none', 'important');
+        slot.replaceChildren();
 
-        const toolbar = document.createElement('div');
-        toolbar.className = TOOLBAR_CLASS;
-        for (const action of actions) {
-          toolbar.appendChild(buildButton(action, slot));
-        }
-        slot.replaceChildren(toolbar);
+        const target = slot.previousElementSibling;
+        if (!target || target.dataset.yomiAnalysisBound === '1') return;
+        target.dataset.yomiAnalysisBound = '1';
+        target.setAttribute('role', 'button');
+        target.setAttribute('tabindex', '0');
+        target.setAttribute('aria-description', ANALYZE_LABEL);
+
+        target.addEventListener('click', event => {
+          if (event.target.closest('a, button, input, textarea, select')) return;
+          const selection = window.getSelection();
+          if (selection && !selection.isCollapsed) return;
+          event.preventDefault();
+          event.stopPropagation();
+          openAnalysis(target);
+        });
+
+        target.addEventListener('keydown', event => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          openAnalysis(target);
+        });
       };
 
       const hydrateTree = root => {
@@ -706,18 +532,6 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
       }
     })();
     """
-    }
-
-    private static func paragraphIconDataURI(systemName: String) -> String {
-        let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .regular, scale: .medium)
-        guard
-            let symbolImage = UIImage(systemName: systemName, withConfiguration: config)?
-                .withTintColor(.black, renderingMode: .alwaysOriginal),
-            let pngData = symbolImage.pngData()
-        else {
-            return ""
-        }
-        return "data:image/png;base64,\(pngData.base64EncodedString())"
     }
 }
 

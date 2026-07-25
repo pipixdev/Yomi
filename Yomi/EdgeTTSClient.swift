@@ -1,6 +1,17 @@
 import CryptoKit
 import Foundation
 
+struct SpeechBoundary: Codable, Hashable, Sendable {
+    let text: String
+    let offset: TimeInterval
+    let duration: TimeInterval
+}
+
+struct EdgeTTSSynthesis: Sendable {
+    let audio: Data
+    let boundaries: [SpeechBoundary]
+}
+
 enum EdgeTTSClient {
     static let enabledDefaultsKey = "reader.edgeTTS.enabled"
 
@@ -8,7 +19,7 @@ enum EdgeTTSClient {
     private static let chromiumVersion = "143.0.3650.75"
     private static let voice = "ja-JP-NanamiNeural"
     private static let outputFormat = "audio-24khz-48kbitrate-mono-mp3"
-    private static let cacheVersion = "1"
+    private static let cacheVersion = "2"
     private static let maximumTextBytes = 4_000
     private static let audioCache = EdgeTTSAudioCache()
 
@@ -32,31 +43,42 @@ enum EdgeTTSClient {
         }
     }
 
-    static func synthesize(_ text: String) async throws -> Data {
+    static func synthesize(_ text: String) async throws -> EdgeTTSSynthesis {
         let cacheKey = cacheKey(for: text)
-        if let cachedAudio = await audioCache.data(for: cacheKey) {
+        if let cachedSynthesis = await audioCache.synthesis(for: cacheKey) {
 #if DEBUG
             print("Yomi Edge TTS cache hit: \(cacheKey)")
 #endif
-            return cachedAudio
+            return cachedSynthesis
         }
 
-        var result = Data()
+        var audio = Data()
+        var boundaries: [SpeechBoundary] = []
 
         for chunk in escapedTextChunks(text) {
             try Task.checkCancellation()
-            result.append(try await synthesizeChunk(chunk))
+            let result = try await synthesizeChunk(chunk)
+            let chunkOffset = Double(audio.count * 8) / 48_000
+            audio.append(result.audio)
+            boundaries.append(contentsOf: result.boundaries.map {
+                SpeechBoundary(
+                    text: $0.text,
+                    offset: $0.offset + chunkOffset,
+                    duration: $0.duration
+                )
+            })
         }
 
-        guard !result.isEmpty else {
+        guard !audio.isEmpty else {
             throw ClientError.noAudioReceived
         }
 
-        await audioCache.store(result, for: cacheKey)
-        return result
+        let synthesis = EdgeTTSSynthesis(audio: audio, boundaries: boundaries)
+        await audioCache.store(synthesis, for: cacheKey)
+        return synthesis
     }
 
-    private static func synthesizeChunk(_ escapedText: String) async throws -> Data {
+    private static func synthesizeChunk(_ escapedText: String) async throws -> EdgeTTSSynthesis {
         guard let endpoint = makeEndpointURL() else {
             throw ClientError.invalidEndpoint
         }
@@ -89,6 +111,7 @@ enum EdgeTTSClient {
         try await socket.send(.string(ssmlMessage(for: escapedText)))
 
         var audio = Data()
+        var boundaries: [SpeechBoundary] = []
         var didFinish = false
 
         while !didFinish {
@@ -98,9 +121,10 @@ enum EdgeTTSClient {
             case let .string(message):
                 if message.contains("Path:turn.end") {
                     didFinish = true
+                } else if message.contains("Path:audio.metadata") {
+                    boundaries.append(contentsOf: parseBoundaries(from: message))
                 } else if message.contains("Path:response")
                     || message.contains("Path:turn.start")
-                    || message.contains("Path:audio.metadata")
                 {
                     continue
                 } else {
@@ -131,7 +155,7 @@ enum EdgeTTSClient {
         guard !audio.isEmpty else {
             throw ClientError.noAudioReceived
         }
-        return audio
+        return EdgeTTSSynthesis(audio: audio, boundaries: boundaries)
     }
 
     private static func makeEndpointURL() -> URL? {
@@ -154,7 +178,7 @@ enum EdgeTTSClient {
         Content-Type:application/json; charset=utf-8\r
         Path:speech.config\r
         \r
-        {"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"true","wordBoundaryEnabled":"false"},"outputFormat":"\(outputFormat)"}}}}\r
+        {"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"true"},"outputFormat":"\(outputFormat)"}}}}\r
 
         """
     }
@@ -227,6 +251,45 @@ enum EdgeTTSClient {
             .joined()
     }
 
+    private static func parseBoundaries(from message: String) -> [SpeechBoundary] {
+        guard
+            let separator = message.range(of: "\r\n\r\n"),
+            let payload = message[separator.upperBound...].data(using: .utf8),
+            let root = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+            let metadata = root["Metadata"] as? [[String: Any]]
+        else {
+            return []
+        }
+
+        return metadata.compactMap { item in
+            guard
+                item["Type"] as? String == "WordBoundary",
+                let data = item["Data"] as? [String: Any],
+                let offset = data["Offset"] as? NSNumber,
+                let duration = data["Duration"] as? NSNumber,
+                let textContainer = data["text"] as? [String: Any],
+                let text = textContainer["Text"] as? String
+            else {
+                return nil
+            }
+
+            return SpeechBoundary(
+                text: unescapeXML(text),
+                offset: offset.doubleValue / 10_000_000,
+                duration: duration.doubleValue / 10_000_000
+            )
+        }
+    }
+
+    private static func unescapeXML(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "&apos;", with: "'")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&amp;", with: "&")
+    }
+
     private static func cacheKey(for text: String) -> String {
         let identity = [
             "edge-tts-cache-\(cacheVersion)",
@@ -268,17 +331,28 @@ private actor EdgeTTSAudioCache {
             .appendingPathComponent("EdgeTTS", isDirectory: true)
     }
 
-    func data(for key: String) -> Data? {
-        guard let fileURL = fileURL(for: key) else { return nil }
-        guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else {
-            try? FileManager.default.removeItem(at: fileURL)
+    func synthesis(for key: String) -> EdgeTTSSynthesis? {
+        guard
+            let audioURL = audioURL(for: key),
+            let metadataURL = metadataURL(for: key),
+            let audio = try? Data(contentsOf: audioURL),
+            !audio.isEmpty,
+            let metadata = try? Data(contentsOf: metadataURL),
+            let boundaries = try? JSONDecoder().decode([SpeechBoundary].self, from: metadata)
+        else {
+            removeFiles(for: key)
             return nil
         }
-        return data
+        return EdgeTTSSynthesis(audio: audio, boundaries: boundaries)
     }
 
-    func store(_ data: Data, for key: String) {
-        guard !data.isEmpty, let directoryURL, let fileURL = fileURL(for: key) else {
+    func store(_ synthesis: EdgeTTSSynthesis, for key: String) {
+        guard
+            !synthesis.audio.isEmpty,
+            let directoryURL,
+            let audioURL = audioURL(for: key),
+            let metadataURL = metadataURL(for: key)
+        else {
             return
         }
 
@@ -287,13 +361,28 @@ private actor EdgeTTSAudioCache {
                 at: directoryURL,
                 withIntermediateDirectories: true
             )
-            try data.write(to: fileURL, options: .atomic)
+            let metadata = try JSONEncoder().encode(synthesis.boundaries)
+            try synthesis.audio.write(to: audioURL, options: .atomic)
+            try metadata.write(to: metadataURL, options: .atomic)
         } catch {
             print("Yomi Edge TTS cache write failed: \(error)")
         }
     }
 
-    private func fileURL(for key: String) -> URL? {
+    private func audioURL(for key: String) -> URL? {
         directoryURL?.appendingPathComponent(key).appendingPathExtension("mp3")
+    }
+
+    private func metadataURL(for key: String) -> URL? {
+        directoryURL?.appendingPathComponent(key).appendingPathExtension("json")
+    }
+
+    private func removeFiles(for key: String) {
+        if let audioURL = audioURL(for: key) {
+            try? FileManager.default.removeItem(at: audioURL)
+        }
+        if let metadataURL = metadataURL(for: key) {
+            try? FileManager.default.removeItem(at: metadataURL)
+        }
     }
 }

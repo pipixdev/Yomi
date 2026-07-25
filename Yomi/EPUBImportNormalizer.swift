@@ -10,7 +10,7 @@ import ReadiumShared
 import ReadiumStreamer
 
 final class EPUBImportNormalizer {
-    static let version = 3
+    static let version = 4
 
     private let rubyPipeline = JapaneseRubyAnnotationPipeline()
 
@@ -292,57 +292,10 @@ final class EPUBImportNormalizer {
           margin-bottom: 1em !important;
         }
         .yomi-paragraph-slot {
-          display: flex !important;
-          justify-content: flex-end !important;
-          align-items: center !important;
-          min-height: 1.35em !important;
-          margin: -0.2em 0 1em 0 !important;
-          padding: 0 !important;
-          text-indent: 0 !important;
-        }
-        .yomi-paragraph-toolbar {
-          display: flex !important;
-          flex-wrap: nowrap !important;
-          justify-content: flex-end !important;
-          align-items: center !important;
-          gap: 0.1em !important;
-          width: 100% !important;
-        }
-        .yomi-paragraph-action {
-          display: inline-flex !important;
-          justify-content: center !important;
-          align-items: center !important;
-          width: 2.15em !important;
-          height: 2.15em !important;
-          border: 0 !important;
-          border-radius: 999px !important;
-          background: transparent !important;
-          color: rgba(60, 60, 67, 0.72) !important;
-          padding: 0 !important;
+          display: none !important;
+          min-height: 0 !important;
           margin: 0 !important;
-          line-height: 1 !important;
-          font: inherit !important;
-          cursor: pointer !important;
-          appearance: none !important;
-          -webkit-appearance: none !important;
-          -webkit-tap-highlight-color: transparent !important;
-          transition: background-color 140ms ease, transform 140ms ease, opacity 140ms ease !important;
-        }
-        .yomi-paragraph-action-icon {
-          display: block !important;
-          width: 1.15em !important;
-          height: 1.15em !important;
-          opacity: 0.72 !important;
-          object-fit: contain !important;
-          pointer-events: none !important;
-        }
-        .yomi-paragraph-action:active {
-          background: rgba(60, 60, 67, 0.08) !important;
-          transform: scale(0.96) !important;
-        }
-        .yomi-paragraph-action.is-feedback {
-          opacity: 0.92 !important;
-          background: rgba(60, 60, 67, 0.06) !important;
+          padding: 0 !important;
         }
         img, svg, video, canvas {
           display: block !important;

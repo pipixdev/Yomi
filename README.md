@@ -9,7 +9,9 @@ It currently focuses on a few core experiences:
 - Opening and reading EPUB content with Readium
 - Normalizing imported content to produce more consistent layout and paragraph structure
 - Adding ruby / furigana annotations to Japanese text
+- Opening paragraph analysis by tapping reading text, with horizontal swipes between adjacent paragraphs and return-to-paragraph positioning
 - Running MeCab-based paragraph token analysis for faster word inspection during reading
+- Reading analyzed paragraphs aloud with synchronized word highlighting
 - Saving reading location and progress so users can continue later
 
 ## Current Project Status
