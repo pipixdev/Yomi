@@ -30,9 +30,18 @@ struct BookshelfView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 #endif
 
-    private let columns = [
-        GridItem(.adaptive(minimum: 180, maximum: 220), spacing: 28)
-    ]
+    private let gridSpacing: CGFloat = 18
+    private let gridHorizontalPadding: CGFloat = 20
+
+    private var columns: [GridItem] {
+        [
+            GridItem(
+                .adaptive(minimum: 150, maximum: 210),
+                spacing: gridSpacing,
+                alignment: .top
+            )
+        ]
+    }
 
     var body: some View {
         NavigationStack {
@@ -166,7 +175,8 @@ struct BookshelfView: View {
                     bookCard(for: book)
                 }
             }
-            .padding(28)
+            .padding(.horizontal, gridHorizontalPadding)
+            .padding(.vertical, 24)
         }
     }
 
@@ -236,7 +246,7 @@ private struct BookCardView: View {
                             }
                     }
                 }
-                .frame(height: 280)
+                .aspectRatio(2 / 3, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
                 .overlay(alignment: .topTrailing) {

@@ -81,7 +81,7 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
     let onLocationChange: (Locator) -> Void
 
     func makeUIViewController(context: Context) -> UINavigationController {
-        let controller = ReadiumReaderViewController(
+        let readerController = ReadiumReaderViewController(
             bookID: bookID,
             normalizedURL: normalizedURL,
             epubURL: epubURL,
@@ -89,14 +89,22 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
             initialFontScale: fontScale,
             initialPageMarginsScale: pageMarginsScale,
             initialFontOptionRawValue: fontOptionRawValue,
-            onClose: onClose,
             onLocationChange: onLocationChange
         )
-        return UINavigationController(rootViewController: controller)
+        let dismissalController = ReaderDismissalViewController(onClose: onClose)
+        let navigationController = UINavigationController(rootViewController: dismissalController)
+        navigationController.setViewControllers(
+            [dismissalController, readerController],
+            animated: false
+        )
+        return navigationController
     }
 
     func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {
-        guard let reader = uiViewController.viewControllers.first as? ReadiumReaderViewController else {
+        guard let reader = uiViewController.viewControllers
+            .compactMap({ $0 as? ReadiumReaderViewController })
+            .first
+        else {
             return
         }
         reader.applyUserPreferences(
@@ -112,7 +120,6 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     private let normalizedURL: URL?
     private let epubURL: URL
     private let initialLocatorJSON: String?
-    private let onClose: () -> Void
     private let onLocationChange: (Locator) -> Void
     private var readerFontScale: Double
     private var readerPageMarginsScale: Double
@@ -133,14 +140,12 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         initialFontScale: Double,
         initialPageMarginsScale: Double,
         initialFontOptionRawValue: String,
-        onClose: @escaping () -> Void,
         onLocationChange: @escaping (Locator) -> Void
     ) {
         self.bookID = bookID
         self.normalizedURL = normalizedURL
         self.epubURL = epubURL
         self.initialLocatorJSON = initialLocatorJSON
-        self.onClose = onClose
         self.onLocationChange = onLocationChange
         readerFontScale = initialFontScale
         readerPageMarginsScale = initialPageMarginsScale
@@ -191,14 +196,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     }
 
     private func setupNavigationChrome() {
-        let closeItem = UIBarButtonItem(
-            image: UIImage(systemName: "chevron.left"),
-            style: .plain,
-            target: self,
-            action: #selector(closeReaderTapped)
-        )
-        closeItem.accessibilityLabel = String(localized: "Close Reader")
-        navigationItem.leftBarButtonItem = closeItem
+        navigationItem.backButtonDisplayMode = .minimal
         navigationItem.title = nil
     }
 
@@ -320,11 +318,6 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             bottom: max(view.safeAreaInsets.bottom, 20),
             right: 0
         )
-    }
-
-    @objc
-    private func closeReaderTapped() {
-        onClose()
     }
 
     func navigator(_ navigator: EPUBNavigatorViewController, setupUserScripts userContentController: WKUserContentController) {
@@ -532,6 +525,34 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
       }
     })();
     """
+    }
+}
+
+private final class ReaderDismissalViewController: UIViewController {
+    private let onClose: () -> Void
+    private var hasAppeared = false
+
+    init(onClose: @escaping () -> Void) {
+        self.onClose = onClose
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        navigationItem.backButtonDisplayMode = .minimal
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !hasAppeared else { return }
+        hasAppeared = true
+        onClose()
     }
 }
 

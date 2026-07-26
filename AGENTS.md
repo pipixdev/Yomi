@@ -60,7 +60,7 @@
 - `Yomi/LibraryStore.swift` is the central state container and the first place to inspect for data flow, persistence, import lifecycle, deletion, and reading progress behavior.
 - `LibraryStore` persists book metadata to `library.json` under Application Support.
 - Book files are stored under `Application Support/Books/<book-id>/...`.
-- On launch, `LibraryStore` also scans `Yomi/PreloadedBooks/` and auto-imports missing bundled EPUBs once, deduplicated by source fingerprint.
+- On launch, `LibraryStore` also scans bundled `PreloadedBooks` resources and auto-imports missing EPUBs once, deduplicated by source fingerprint. The included sample novel is a Debug-only resource; a final target build phase removes it from Release products after resources are copied.
 
 ### Core Models
 
@@ -72,11 +72,11 @@
 - `Yomi/ReaderView.swift` bridges SwiftUI into the Readium reader on iOS through `UIViewControllerRepresentable`.
 - Reader preferences such as theme, font, parse font size, and page margins are stored with `@AppStorage`.
 - Reader location changes are pushed back into `LibraryStore` so progress can be restored later.
-- The main reader keeps the native navigation bar visible with its close/back action, and lays Readium content below the bar. It does not use a full-screen tap gesture to reveal navigation chrome, avoiding conflicts with tap-to-analyze paragraphs.
+- The main reader keeps the native navigation bar visible with its close/back action, and lays Readium content below the bar. Its internal navigation stack includes a dismissal root beneath the reader so both the back button and the native left-edge swipe close the full-screen reader, while the same gesture pops paragraph analysis back to reading. It does not use a full-screen tap gesture to reveal navigation chrome, avoiding conflicts with tap-to-analyze paragraphs.
 - The normalizer injects hidden paragraph metadata slots into HTML. The reader script binds the preceding paragraph body as a single-tap target, hides any legacy action toolbar UI, and opens `ParagraphAnalysisView` with the current chapter's paragraph list and selected index. The analysis view reports paragraph-index changes back to the reader; when the user returns, the injected script scrolls the loaded Readium resource to that paragraph's paginated position.
 - `Yomi/SpeechPlaybackController.swift` owns speech playback state for the paragraph analysis UI. System speech highlights ranges through `AVSpeechSynthesizerDelegate`; Edge speech uses returned word-boundary timestamps to synchronize highlighting with `AVAudioPlayer`.
 - Paragraph-analysis TTS uses `AVSpeechSynthesizer` by default. For local testing, `Yomi/EdgeTTSClient.swift` can directly use the same Microsoft Edge consumer WebSocket service as `rany2/edge-tts`; its setting is disabled by default, and network or protocol failures fall back to the system voice. Successful Edge TTS responses and their word-boundary timelines are stored as paired MP3 and JSON files under the app's caches directory using a versioned hash of the voice, output format, and paragraph text, so repeated playback avoids another network request while preserving highlights.
-- `Yomi/ParagraphAnalysisView.swift` shows MeCab tokenization results for one paragraph, supports horizontal swipes between adjacent paragraphs from the current chapter, exposes a minimal play/stop icon in the navigation bar with synchronized token highlighting, and opens native iOS dictionary lookup when a token is tapped.
+- `Yomi/ParagraphAnalysisView.swift` shows MeCab tokenization results for one paragraph in a vertically scrolling view. After reaching the bottom, a further upward pull advances to the next paragraph in the current chapter; at the top, a further downward pull returns to the previous paragraph. The view exposes a minimal play/stop icon in the navigation bar with synchronized token highlighting and opens native iOS dictionary lookup when a token is tapped.
 - Readium integration is effectively iOS-first. Non-iOS builds may show fallback unavailable states instead of a working reader.
 
 ### EPUB Import And Normalization Pipeline

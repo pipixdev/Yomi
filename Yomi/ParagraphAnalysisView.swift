@@ -18,6 +18,10 @@ struct ParagraphAnalysisView: View {
     @State private var activePresentation: TokenPresentation?
     @State private var contentHeight: CGFloat = 1
     @State private var currentIndex: Int
+    @State private var isAtScrollBottom = false
+    @State private var isAtScrollTop = true
+    @State private var paragraphDragStartedAtBottom: Bool?
+    @State private var paragraphDragStartedAtTop: Bool?
     @State private var tokens: [ReaderToken]
 #if canImport(UIKit)
     @StateObject private var speechPlayback = SpeechPlaybackController()
@@ -48,20 +52,49 @@ struct ParagraphAnalysisView: View {
     }
 
     var body: some View {
-        ScrollView {
-            if tokens.isEmpty {
-                ContentUnavailableView(
-                    String(localized: "No tokens found"),
-                    systemImage: "text.word.spacing"
-                )
-                .padding(20)
-            } else {
-                tokenContent
-                    .id(currentIndex)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
-                    .transition(.opacity)
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                Color.clear
+                    .frame(height: 0)
+                    .id(ScrollTarget.top)
+
+                if tokens.isEmpty {
+                    ContentUnavailableView(
+                        String(localized: "No tokens found"),
+                        systemImage: "text.word.spacing"
+                    )
+                    .padding(20)
+                } else {
+                    tokenContent
+                        .id(currentIndex)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+                        .transition(.opacity)
+                }
             }
+            .onScrollGeometryChange(for: ScrollBoundaryState.self) { geometry in
+                ScrollBoundaryState(
+                    isAtTop: geometry.visibleRect.minY <= 2,
+                    isAtBottom: geometry.visibleRect.maxY >= geometry.contentSize.height - 2
+                )
+            } action: { _, boundaryState in
+                isAtScrollTop = boundaryState.isAtTop
+                isAtScrollBottom = boundaryState.isAtBottom
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12)
+                    .onChanged { _ in
+                        if paragraphDragStartedAtTop == nil {
+                            paragraphDragStartedAtTop = isAtScrollTop
+                        }
+                        if paragraphDragStartedAtBottom == nil {
+                            paragraphDragStartedAtBottom = isAtScrollBottom
+                        }
+                    }
+                    .onEnded { value in
+                        handleParagraphDrag(value, scrollProxy: scrollProxy)
+                    }
+            )
         }
         .navigationTitle(String(localized: "Parse"))
         .navigationBarTitleDisplayMode(.inline)
@@ -100,10 +133,6 @@ struct ParagraphAnalysisView: View {
             speechPlayback.stop()
         }
 #endif
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 30)
-                .onEnded(handleParagraphSwipe)
-        )
         .sheet(item: $activePresentation) { presentation in
             TokenPresentationSheet(presentation: presentation)
                 .presentationDetents([.medium, .large])
@@ -111,19 +140,32 @@ struct ParagraphAnalysisView: View {
         }
     }
 
-    private func handleParagraphSwipe(_ value: DragGesture.Value) {
-        let horizontalDistance = value.translation.width
+    private func handleParagraphDrag(
+        _ value: DragGesture.Value,
+        scrollProxy: ScrollViewProxy
+    ) {
+        let startedAtTop = paragraphDragStartedAtTop ?? isAtScrollTop
+        let startedAtBottom = paragraphDragStartedAtBottom ?? isAtScrollBottom
+        paragraphDragStartedAtTop = nil
+        paragraphDragStartedAtBottom = nil
+
         let verticalDistance = value.translation.height
         guard
-            abs(horizontalDistance) >= 55,
-            abs(horizontalDistance) > abs(verticalDistance)
+            abs(verticalDistance) >= 55,
+            abs(verticalDistance) > abs(value.translation.width)
         else {
             return
         }
 
-        let proposedIndex = horizontalDistance < 0
-            ? currentIndex + 1
-            : currentIndex - 1
+        let proposedIndex: Int
+        if verticalDistance < 0, startedAtBottom {
+            proposedIndex = currentIndex + 1
+        } else if verticalDistance > 0, startedAtTop {
+            proposedIndex = currentIndex - 1
+        } else {
+            return
+        }
+
         guard paragraphs.indices.contains(proposedIndex) else { return }
 
 #if canImport(UIKit)
@@ -136,6 +178,7 @@ struct ParagraphAnalysisView: View {
         withAnimation(.easeInOut(duration: 0.18)) {
             currentIndex = proposedIndex
             tokens = textAnalyzer.tokens(for: paragraphs[proposedIndex])
+            scrollProxy.scrollTo(ScrollTarget.top, anchor: .top)
         }
         onParagraphChange(proposedIndex)
     }
@@ -158,6 +201,15 @@ struct ParagraphAnalysisView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 #endif
     }
+}
+
+private enum ScrollTarget: Hashable {
+    case top
+}
+
+private struct ScrollBoundaryState: Equatable {
+    let isAtTop: Bool
+    let isAtBottom: Bool
 }
 
 private enum TokenPresentation: Identifiable {
