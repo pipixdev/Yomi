@@ -18,6 +18,7 @@ It currently focuses on a few core experiences:
 ## Current Project Status
 
 - The app is primarily built with SwiftUI
+- The minimum supported iOS version is iOS 16
 - Reader integration is based on Readium
 - Japanese text analysis is powered by MeCab + IPADic
 - The current implementation is iOS-first; some reading features fall back to unavailable states on non-iOS platforms

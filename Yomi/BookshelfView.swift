@@ -55,22 +55,22 @@ struct BookshelfView: View {
                     importButton
                 }
 #else
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .navigationBarLeading) {
                     if horizontalSizeClass == .compact {
                         settingsButton
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     importButton
                 }
 #endif
             }
             .overlay {
                 if store.books.isEmpty {
-                    ContentUnavailableView(
+                    CompatibilityUnavailableView(
                         "No books yet",
                         systemImage: "books.vertical",
-                        description: Text("Add a book to get started.")
+                        description: "Add a book to get started."
                     )
                 }
             }

@@ -46,6 +46,7 @@
 ## Project Snapshot For Future LLMs
 
 - `Yomi` is a SwiftUI reading app focused on importing EPUB files, displaying them on a bookshelf, and opening them in a Readium-based reader.
+- The app's minimum supported iOS version is iOS 16. Newer-system UI effects should remain enabled behind availability checks, with behavior-compatible fallbacks on iOS 16.
 - The app is no longer a default Xcode template. The main product surface already includes a bookshelf flow, settings flow, EPUB import/rebuild, normalized reading content, Japanese text analysis, and reader progress persistence.
 - The project currently uses one main app target. UI, local persistence, EPUB normalization, reader integration, and Japanese annotation/tokenization logic currently live in the same module.
 

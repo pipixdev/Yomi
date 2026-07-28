@@ -52,49 +52,70 @@ struct ParagraphAnalysisView: View {
     }
 
     var body: some View {
-        ScrollViewReader { scrollProxy in
-            ScrollView {
-                Color.clear
-                    .frame(height: 0)
-                    .id(ScrollTarget.top)
+        GeometryReader { viewportGeometry in
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        Color.clear
+                            .frame(height: 0)
+                            .id(ScrollTarget.top)
+                            .background {
+                                GeometryReader { geometry in
+                                    Color.clear.preference(
+                                        key: ScrollTopPositionPreferenceKey.self,
+                                        value: geometry.frame(in: .named(ScrollCoordinateSpace.name)).minY
+                                    )
+                                }
+                            }
 
-                if tokens.isEmpty {
-                    ContentUnavailableView(
-                        String(localized: "No tokens found"),
-                        systemImage: "text.word.spacing"
-                    )
-                    .padding(20)
-                } else {
-                    tokenContent
-                        .id(currentIndex)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 16)
-                        .transition(.opacity)
+                        if tokens.isEmpty {
+                            CompatibilityUnavailableView(
+                                "No tokens found",
+                                systemImage: "text.word.spacing"
+                            )
+                            .padding(20)
+                        } else {
+                            tokenContent
+                                .id(currentIndex)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 16)
+                                .transition(.opacity)
+                        }
+
+                        Color.clear
+                            .frame(height: 0)
+                            .background {
+                                GeometryReader { geometry in
+                                    Color.clear.preference(
+                                        key: ScrollBottomPositionPreferenceKey.self,
+                                        value: geometry.frame(in: .named(ScrollCoordinateSpace.name)).maxY
+                                    )
+                                }
+                            }
+                    }
                 }
-            }
-            .onScrollGeometryChange(for: ScrollBoundaryState.self) { geometry in
-                ScrollBoundaryState(
-                    isAtTop: geometry.visibleRect.minY <= 2,
-                    isAtBottom: geometry.visibleRect.maxY >= geometry.contentSize.height - 2
+                .coordinateSpace(name: ScrollCoordinateSpace.name)
+                .onPreferenceChange(ScrollTopPositionPreferenceKey.self) { topPosition in
+                    isAtScrollTop = topPosition >= -2
+                }
+                .onPreferenceChange(ScrollBottomPositionPreferenceKey.self) { bottomPosition in
+                    isAtScrollBottom = bottomPosition <= viewportGeometry.size.height + 2
+                }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 12)
+                        .onChanged { _ in
+                            if paragraphDragStartedAtTop == nil {
+                                paragraphDragStartedAtTop = isAtScrollTop
+                            }
+                            if paragraphDragStartedAtBottom == nil {
+                                paragraphDragStartedAtBottom = isAtScrollBottom
+                            }
+                        }
+                        .onEnded { value in
+                            handleParagraphDrag(value, scrollProxy: scrollProxy)
+                        }
                 )
-            } action: { _, boundaryState in
-                isAtScrollTop = boundaryState.isAtTop
-                isAtScrollBottom = boundaryState.isAtBottom
             }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 12)
-                    .onChanged { _ in
-                        if paragraphDragStartedAtTop == nil {
-                            paragraphDragStartedAtTop = isAtScrollTop
-                        }
-                        if paragraphDragStartedAtBottom == nil {
-                            paragraphDragStartedAtBottom = isAtScrollBottom
-                        }
-                    }
-                    .onEnded { value in
-                        handleParagraphDrag(value, scrollProxy: scrollProxy)
-                    }
-            )
         }
         .navigationTitle(String(localized: "Parse"))
         .navigationBarTitleDisplayMode(.inline)
@@ -110,12 +131,11 @@ struct ParagraphAnalysisView: View {
                 }
             }
 
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     speechPlayback.toggle(speechText)
                 } label: {
-                    Image(systemName: speechPlayback.isSpeaking ? "stop.fill" : "speaker.wave.2")
-                        .contentTransition(.symbolEffect(.replace))
+                    speechPlaybackImage
                 }
                 .accessibilityLabel(
                     speechPlayback.isSpeaking
@@ -139,6 +159,18 @@ struct ParagraphAnalysisView: View {
                 .presentationDragIndicator(.visible)
         }
     }
+
+#if canImport(UIKit)
+    @ViewBuilder
+    private var speechPlaybackImage: some View {
+        if #available(iOS 17.0, *) {
+            Image(systemName: speechPlayback.isSpeaking ? "stop.fill" : "speaker.wave.2")
+                .contentTransition(.symbolEffect(.replace))
+        } else {
+            Image(systemName: speechPlayback.isSpeaking ? "stop.fill" : "speaker.wave.2")
+        }
+    }
+#endif
 
     private func handleParagraphDrag(
         _ value: DragGesture.Value,
@@ -207,9 +239,24 @@ private enum ScrollTarget: Hashable {
     case top
 }
 
-private struct ScrollBoundaryState: Equatable {
-    let isAtTop: Bool
-    let isAtBottom: Bool
+private enum ScrollCoordinateSpace {
+    static let name = "paragraph-analysis-scroll"
+}
+
+private struct ScrollTopPositionPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct ScrollBottomPositionPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
 }
 
 private enum TokenPresentation: Identifiable {

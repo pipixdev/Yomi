@@ -51,17 +51,17 @@ struct ReaderView: View {
                 )
                 .ignoresSafeArea()
 #else
-                ContentUnavailableView(
+                CompatibilityUnavailableView(
                     "Reader unavailable",
                     systemImage: "book.closed",
-                    description: Text("Reading is unavailable on this device.")
+                    description: "Reading is unavailable on this device."
                 )
 #endif
             } else {
-                ContentUnavailableView(
+                CompatibilityUnavailableView(
                     "Book unavailable",
                     systemImage: "book.closed",
-                    description: Text("This book may have been removed from your library.")
+                    description: "This book may have been removed from your library."
                 )
             }
         }
