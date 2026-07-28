@@ -4,7 +4,8 @@ Yomi is a SwiftUI EPUB reading app designed for Japanese reading workflows.
 
 It currently focuses on a few core experiences:
 
-- Importing EPUB files into a local bookshelf
+- Importing EPUB files and plain-text TXT files into a local bookshelf
+- Creating simple EPUB books from pasted clipboard text, with each non-empty line becoming one paragraph
 - Managing, rebuilding, and removing books from the library
 - Opening and reading EPUB content with Readium
 - Normalizing imported content to produce more consistent layout and paragraph structure

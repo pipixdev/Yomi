@@ -58,6 +58,7 @@
 ### State And Persistence
 
 - `Yomi/LibraryStore.swift` is the central state container and the first place to inspect for data flow, persistence, import lifecycle, deletion, and reading progress behavior.
+- `LibraryStore.importPlainText` creates books from clipboard text or imported TXT files through `Yomi/PlainTextEPUBBuilder.swift`. The builder treats every non-empty input line as one paragraph, packages the result as a minimal EPUB, and feeds it into the same Readium import and normalization path as external EPUB files. TXT imports use the filename as the book title, omit creator metadata so the library shows its localized unknown-author fallback, and decode UTF-8, BOM-marked UTF-16, or Shift JIS text.
 - `LibraryStore` persists book metadata to `library.json` under Application Support.
 - Book files are stored under `Application Support/Books/<book-id>/...`.
 - On launch, `LibraryStore` also scans bundled `PreloadedBooks` resources and auto-imports missing EPUBs once, deduplicated by source fingerprint. The included sample novel is a Debug-only resource; a final target build phase removes it from Release products after resources are copied.
@@ -82,6 +83,7 @@
 ### EPUB Import And Normalization Pipeline
 
 - `LibraryStore.importBook` and `LibraryStore.rebuildBook` are the main entry points for book processing.
+- `LibraryStore.importPlainText` is the text-book entry point. It creates a temporary standards-compliant EPUB locally, then reuses the regular import pipeline so generated books have the same storage, normalization, analysis, and reader behavior.
 - `Yomi/EPUBImportNormalizer.swift` rewrites imported EPUB content into a reading-optimized version.
 - The normalizer removes publisher styling, injects app-controlled reading styles, promotes likely chapter headings, converts Aozora-style `<br>`-delimited text into paragraph blocks when appropriate, and injects hidden paragraph metadata slots used for tap-to-analyze navigation.
 - Normalized output is stored alongside the original EPUB so the app keeps both the source asset and the processed reading version.

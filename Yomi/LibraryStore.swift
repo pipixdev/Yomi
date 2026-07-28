@@ -21,7 +21,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var books: [BookRecord] = []
     @Published var isImporting = false
     @Published var importProgressFraction: Double?
-    @Published var importProgressLabel = String(localized: "Importing EPUB…")
+    @Published var importProgressLabel = String(localized: "Importing book…")
     @Published var importError: String?
 
     private let manifestURL: URL
@@ -101,8 +101,84 @@ final class LibraryStore: ObservableObject {
             importError = error.localizedDescription
         }
 #else
-        importError = String(localized: "Readium reader is available on iOS only in this build.")
+        importError = String(localized: "Book importing is available on iOS only.")
 #endif
+    }
+
+    func importPlainText(title: String, author: String, text: String) async {
+        isImporting = true
+        importProgressFraction = 0
+        importProgressLabel = String(localized: "Preparing text…")
+        importError = nil
+
+        let bookID = UUID()
+        let temporaryEPUBURL = fileManager.temporaryDirectory
+            .appendingPathComponent("Yomi-\(bookID.uuidString)")
+            .appendingPathExtension("epub")
+
+        defer {
+            try? fileManager.removeItem(at: temporaryEPUBURL)
+            importProgressFraction = nil
+            isImporting = false
+        }
+
+#if canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
+        do {
+            try PlainTextEPUBBuilder().build(
+                title: title,
+                author: author,
+                text: text,
+                bookID: bookID,
+                destinationURL: temporaryEPUBURL
+            )
+
+            let fingerprint = try fileFingerprint(for: temporaryEPUBURL)
+            let importedBook = try await importer.importBook(
+                bookID: bookID,
+                from: temporaryEPUBURL,
+                sourceFingerprint: fingerprint,
+                using: fileManager,
+                progress: { [weak self] fraction, label in
+                    Task { @MainActor [weak self] in
+                        self?.importProgressFraction = fraction
+                        self?.importProgressLabel = label
+                    }
+                }
+            )
+
+            books.insert(importedBook, at: 0)
+            books.sort { $0.importedAt > $1.importedAt }
+            try persist()
+        } catch {
+            importError = error.localizedDescription
+        }
+#else
+        importError = String(localized: "Book importing is available on iOS only.")
+#endif
+    }
+
+    func importPlainText(from url: URL) async {
+        let isSecurityScoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if isSecurityScoped {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            guard let text = Self.decodePlainText(data) else {
+                throw PlainTextFileImportError.unsupportedEncoding
+            }
+
+            await importPlainText(
+                title: url.deletingPathExtension().lastPathComponent,
+                author: "",
+                text: text
+            )
+        } catch {
+            importError = error.localizedDescription
+        }
     }
 
     func rebuildBook(id: UUID) async {
@@ -143,7 +219,7 @@ final class LibraryStore: ObservableObject {
             importError = error.localizedDescription
         }
 #else
-        importError = String(localized: "Readium reader is available on iOS only in this build.")
+        importError = String(localized: "Book importing is available on iOS only.")
 #endif
     }
 
@@ -221,6 +297,22 @@ final class LibraryStore: ObservableObject {
 
         let digest = hasher.finalize()
         return digest.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func decodePlainText(_ data: Data) -> String? {
+        let decoded: String?
+        if data.starts(with: [0xff, 0xfe]) || data.starts(with: [0xfe, 0xff]) {
+            decoded = String(data: data, encoding: .utf16)
+        } else {
+            decoded = String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: .shiftJIS)
+        }
+
+        guard var decoded else { return nil }
+        if decoded.first == "\u{feff}" {
+            decoded.removeFirst()
+        }
+        return decoded
     }
 
     private func persist() throws {
@@ -308,6 +400,14 @@ final class LibraryStore: ObservableObject {
     }
 }
 
+private enum PlainTextFileImportError: LocalizedError {
+    case unsupportedEncoding
+
+    var errorDescription: String? {
+        String(localized: "This text file uses an unsupported encoding.")
+    }
+}
+
 #if canImport(ReadiumShared) && canImport(ReadiumStreamer) && canImport(UIKit)
 private final class ReadiumLibraryImporter {
     private let normalizer = EPUBImportNormalizer()
@@ -332,7 +432,7 @@ private final class ReadiumLibraryImporter {
         let epubURL = folderURL.appendingPathComponent("book.epub")
         let normalizedFolderURL = folderURL.appendingPathComponent("normalized", isDirectory: true)
 
-        progress(0.05, String(localized: "Copying EPUB…"))
+        progress(0.05, String(localized: "Copying book…"))
 
         if fileManager.fileExists(atPath: folderURL.path) {
             try fileManager.removeItem(at: folderURL)
@@ -346,7 +446,7 @@ private final class ReadiumLibraryImporter {
             throw CocoaError(.fileReadUnknown)
         }
 
-        progress(0.15, String(localized: "Parsing publication…"))
+        progress(0.15, String(localized: "Reading book…"))
         let asset = try await assetRetriever.retrieve(url: absoluteURL).get()
         let publication = try await publicationOpener.open(
             asset: asset,
@@ -361,7 +461,7 @@ private final class ReadiumLibraryImporter {
             throw CocoaError(.fileReadUnsupportedScheme)
         }
 
-        progress(0.25, String(localized: "Extracting cover…"))
+        progress(0.25, String(localized: "Preparing cover…"))
         let coverRelativePath = try await saveCoverIfAvailable(
             publication: publication,
             folderURL: folderURL,
@@ -415,7 +515,7 @@ private final class ReadiumLibraryImporter {
             throw CocoaError(.fileReadUnknown)
         }
 
-        progress(0.10, String(localized: "Opening stored EPUB…"))
+        progress(0.10, String(localized: "Opening book…"))
         let asset = try await assetRetriever.retrieve(url: absoluteURL).get()
         let publication = try await publicationOpener.open(
             asset: asset,

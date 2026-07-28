@@ -27,7 +27,7 @@ final class EPUBImportNormalizer {
             let resourceProgress = Double(index) / Double(totalEntries)
             progress(
                 0.35 + (resourceProgress * 0.55),
-                String(localized: "Normalizing book content…")
+                String(localized: "Preparing book content…")
             )
 
             guard let resource = container[href] else {

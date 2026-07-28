@@ -54,7 +54,7 @@ struct ReaderView: View {
                 ContentUnavailableView(
                     "Reader unavailable",
                     systemImage: "book.closed",
-                    description: Text("Readium integration is not available on this platform.")
+                    description: Text("Reading is unavailable on this device.")
                 )
 #endif
             } else {

@@ -22,6 +22,7 @@ struct BookshelfView: View {
     @EnvironmentObject private var store: LibraryStore
 
     @State private var importingFile = false
+    @State private var showingTextImport = false
     @State private var selectedBook: ReaderSelection?
     @State private var pendingRemoval: BookRecord?
     @State private var showingSettings = false
@@ -69,7 +70,7 @@ struct BookshelfView: View {
                     ContentUnavailableView(
                         "No books yet",
                         systemImage: "books.vertical",
-                        description: Text("Import an EPUB with the + button.")
+                        description: Text("Add a book to get started.")
                     )
                 }
             }
@@ -94,18 +95,30 @@ struct BookshelfView: View {
             }
             .fileImporter(
                 isPresented: $importingFile,
-                allowedContentTypes: [UTType(filenameExtension: "epub") ?? .data],
+                allowedContentTypes: [
+                    UTType(filenameExtension: "epub") ?? .data,
+                    .plainText,
+                ],
                 allowsMultipleSelection: false
             ) { result in
                 switch result {
                 case .success(let urls):
                     guard let url = urls.first else { return }
                     Task {
-                        await store.importBook(from: url)
+                        let contentType = UTType(filenameExtension: url.pathExtension)
+                        if contentType?.conforms(to: .plainText) == true {
+                            await store.importPlainText(from: url)
+                        } else {
+                            await store.importBook(from: url)
+                        }
                     }
                 case .failure(let error):
                     store.importError = error.localizedDescription
                 }
+            }
+            .sheet(isPresented: $showingTextImport) {
+                PlainTextImportView()
+                    .environmentObject(store)
             }
 #if os(iOS)
             .fullScreenCover(item: $selectedBook) { selection in
@@ -161,7 +174,7 @@ struct BookshelfView: View {
             } message: {
                 Text(
                     pendingRemoval.map {
-                        "Delete “\($0.title)” from the library and remove its stored EPUB files."
+                        "“\($0.title)” will be removed from this device."
                     } ?? ""
                 )
             }
@@ -194,12 +207,22 @@ struct BookshelfView: View {
     }
 
     private var importButton: some View {
-        Button {
-            importingFile = true
+        Menu {
+            Button {
+                importingFile = true
+            } label: {
+                Label("Import", systemImage: "doc.badge.plus")
+            }
+
+            Button {
+                showingTextImport = true
+            } label: {
+                Label("Paste Text", systemImage: "doc.on.clipboard")
+            }
         } label: {
             Image(systemName: "plus")
         }
-        .accessibilityLabel("Import EPUB")
+        .accessibilityLabel("Add Book")
     }
 
     private var settingsButton: some View {
@@ -209,6 +232,82 @@ struct BookshelfView: View {
             Image(systemName: "gearshape")
         }
         .accessibilityLabel("Settings")
+    }
+}
+
+private struct PlainTextImportView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: LibraryStore
+
+    @State private var title = ""
+    @State private var author = ""
+    @State private var text = ""
+
+    private var canCreate: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && text.contains { !$0.isWhitespace }
+            && !store.isImporting
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Details") {
+                    TextField("Title", text: $title)
+                    TextField("Author (Optional)", text: $author)
+                }
+
+                Section {
+                    TextEditor(text: $text)
+                        .frame(minHeight: 280)
+                } header: {
+                    Text("Text")
+                } footer: {
+                    Text("One line per paragraph.")
+                }
+            }
+            .navigationTitle("New Book")
+#if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+#endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        let bookTitle = title
+                        let bookAuthor = author
+                        let bookText = text
+                        dismiss()
+                        Task {
+                            await store.importPlainText(
+                                title: bookTitle,
+                                author: bookAuthor,
+                                text: bookText
+                            )
+                        }
+                    }
+                    .disabled(!canCreate)
+                }
+            }
+            .onAppear {
+                guard text.isEmpty else { return }
+                text = Self.clipboardText
+            }
+        }
+    }
+
+    private static var clipboardText: String {
+#if canImport(UIKit)
+        UIPasteboard.general.string ?? ""
+#elseif canImport(AppKit)
+        NSPasteboard.general.string(forType: .string) ?? ""
+#else
+        ""
+#endif
     }
 }
 
@@ -276,7 +375,7 @@ private struct BookCardView: View {
                     .foregroundStyle(.secondary)
 
                 HStack {
-                    Label("EPUB", systemImage: "doc.richtext")
+                    Label("Book", systemImage: "book.closed")
                     Spacer()
                     Text(book.progressSummary)
                         .font(.caption.weight(.semibold))
