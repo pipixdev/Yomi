@@ -2,6 +2,7 @@ schemaVersion: 1
 enabledWorkflows:
   - macos
   - simulator
+  - device
   - logging
   - debugging
   - ui-automation

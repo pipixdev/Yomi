@@ -14,6 +14,7 @@ It currently focuses on a few core experiences:
 - Running MeCab-based paragraph token analysis for faster word inspection during reading
 - Looking up analyzed words in the native iOS dictionary or an optional configurable external dictionary URL scheme
 - Reading analyzed paragraphs aloud with synchronized word highlighting
+- Translating analyzed Japanese paragraphs on demand with Bing's online translation service
 - Saving reading location and progress so users can continue later
 
 ## Current Project Status

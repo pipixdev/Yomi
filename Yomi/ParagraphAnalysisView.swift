@@ -25,6 +25,8 @@ struct ParagraphAnalysisView: View {
     @State private var paragraphDragStartedAtBottom: Bool?
     @State private var paragraphDragStartedAtTop: Bool?
     @State private var tokens: [ReaderToken]
+    @State private var translationRequestID: UUID?
+    @State private var translationState = ParagraphTranslationState.idle
 #if canImport(UIKit)
     @StateObject private var speechPlayback = SpeechPlaybackController()
     @State private var highlightedSpeechRange: NSRange?
@@ -69,7 +71,11 @@ struct ParagraphAnalysisView: View {
                             )
                             .padding(20)
                         } else {
-                            tokenContent
+                            VStack(spacing: 20) {
+                                tokenContent
+
+                                translationContent
+                            }
                                 .id(currentIndex)
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 16)
@@ -122,7 +128,24 @@ struct ParagraphAnalysisView: View {
                 }
             }
 
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Button {
+                    translateCurrentParagraph()
+                } label: {
+                    if translationState.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(
+                            systemName: translationState.hasTranslation
+                                ? "character.bubble.fill"
+                                : "character.bubble"
+                        )
+                    }
+                }
+                .disabled(translationState.isLoading)
+                .accessibilityLabel(String(localized: "Translate paragraph"))
+
                 Button {
                     speechPlayback.toggle(speechText)
                 } label: {
@@ -141,6 +164,7 @@ struct ParagraphAnalysisView: View {
             }
         }
         .onDisappear {
+            translationRequestID = nil
             speechPlayback.stop()
         }
 #endif
@@ -197,6 +221,8 @@ struct ParagraphAnalysisView: View {
 #endif
         activePresentation = nil
         contentHeight = 1
+        translationRequestID = nil
+        translationState = .idle
 
         withAnimation(.easeInOut(duration: 0.18)) {
             currentIndex = proposedIndex
@@ -225,6 +251,92 @@ struct ParagraphAnalysisView: View {
 #endif
     }
 
+    @ViewBuilder
+    private var translationContent: some View {
+        switch translationState {
+        case .idle:
+            EmptyView()
+
+        case .loading:
+            HStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(String(localized: "Translating…"))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+
+        case .translated(let lines):
+            VStack(alignment: .leading, spacing: 12) {
+                Label(String(localized: "Translation"), systemImage: "character.bubble.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(.body)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(16)
+            .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+
+        case .failed:
+            VStack(alignment: .leading, spacing: 12) {
+                Label(
+                    String(localized: "Translation unavailable"),
+                    systemImage: "exclamationmark.triangle"
+                )
+                .foregroundStyle(.secondary)
+
+                Button(String(localized: "Try Again")) {
+                    translateCurrentParagraph()
+                }
+                .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    private func translateCurrentParagraph() {
+        let sourceLines = paragraphs[currentIndex]
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !sourceLines.isEmpty else { return }
+
+        let requestID = UUID()
+        translationRequestID = requestID
+        withAnimation(.easeInOut(duration: 0.18)) {
+            translationState = .loading
+        }
+
+        Task {
+            do {
+                let translatedLines = try await BingTranslateClient.translate(
+                    sourceLines,
+                    targetLanguage: BingTranslateClient.preferredTargetLanguage()
+                )
+                guard translationRequestID == requestID else { return }
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    translationState = .translated(translatedLines)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard translationRequestID == requestID else { return }
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    translationState = .failed
+                }
+            }
+        }
+    }
+
 #if canImport(UIKit)
     private func openDictionary(for token: ReaderToken) {
         let presentation = TokenPresentation.forToken(token)
@@ -245,6 +357,24 @@ struct ParagraphAnalysisView: View {
         }
     }
 #endif
+}
+
+private enum ParagraphTranslationState: Equatable {
+    case idle
+    case loading
+    case translated([String])
+    case failed
+
+    var isLoading: Bool {
+        self == .loading
+    }
+
+    var hasTranslation: Bool {
+        if case .translated = self {
+            return true
+        }
+        return false
+    }
 }
 
 private enum ScrollTarget: Hashable {
