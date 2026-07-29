@@ -59,16 +59,8 @@ struct ParagraphAnalysisView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         Color.clear
-                            .frame(height: 0)
+                            .frame(height: 1)
                             .id(ScrollTarget.top)
-                            .background {
-                                GeometryReader { geometry in
-                                    Color.clear.preference(
-                                        key: ScrollTopPositionPreferenceKey.self,
-                                        value: geometry.frame(in: .named(ScrollCoordinateSpace.name)).minY
-                                    )
-                                }
-                            }
 
                         if tokens.isEmpty {
                             CompatibilityUnavailableView(
@@ -83,25 +75,22 @@ struct ParagraphAnalysisView: View {
                                 .padding(.vertical, 16)
                                 .transition(.opacity)
                         }
-
-                        Color.clear
-                            .frame(height: 0)
-                            .background {
-                                GeometryReader { geometry in
-                                    Color.clear.preference(
-                                        key: ScrollBottomPositionPreferenceKey.self,
-                                        value: geometry.frame(in: .named(ScrollCoordinateSpace.name)).maxY
-                                    )
-                                }
-                            }
+                    }
+                    .background {
+                        GeometryReader { geometry in
+                            let frame = geometry.frame(in: .named(ScrollCoordinateSpace.name))
+                            Color.clear.preference(
+                                key: ScrollContentFramePreferenceKey.self,
+                                value: frame
+                            )
+                        }
                     }
                 }
                 .coordinateSpace(name: ScrollCoordinateSpace.name)
-                .onPreferenceChange(ScrollTopPositionPreferenceKey.self) { topPosition in
-                    isAtScrollTop = topPosition >= -2
-                }
-                .onPreferenceChange(ScrollBottomPositionPreferenceKey.self) { bottomPosition in
-                    isAtScrollBottom = bottomPosition <= viewportGeometry.size.height + 2
+                .onPreferenceChange(ScrollContentFramePreferenceKey.self) { contentFrame in
+                    guard !contentFrame.isNull else { return }
+                    isAtScrollTop = contentFrame.minY >= -2
+                    isAtScrollBottom = contentFrame.maxY <= viewportGeometry.size.height + 2
                 }
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 12)
@@ -266,18 +255,10 @@ private enum ScrollCoordinateSpace {
     static let name = "paragraph-analysis-scroll"
 }
 
-private struct ScrollTopPositionPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
+private struct ScrollContentFramePreferenceKey: PreferenceKey {
+    static var defaultValue = CGRect.null
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-private struct ScrollBottomPositionPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
         value = nextValue()
     }
 }
