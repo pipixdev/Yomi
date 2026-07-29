@@ -87,11 +87,11 @@ struct ParagraphAnalysisView: View {
                     }
                 }
                 .coordinateSpace(name: ScrollCoordinateSpace.name)
-                .onPreferenceChange(ScrollContentFramePreferenceKey.self) { contentFrame in
-                    guard !contentFrame.isNull else { return }
-                    isAtScrollTop = contentFrame.minY >= -2
-                    isAtScrollBottom = contentFrame.maxY <= viewportGeometry.size.height + 2
-                }
+                .trackScrollBoundaries(
+                    viewportHeight: viewportGeometry.size.height,
+                    isAtTop: $isAtScrollTop,
+                    isAtBottom: $isAtScrollBottom
+                )
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 12)
                         .onChanged { _ in
@@ -255,11 +255,43 @@ private enum ScrollCoordinateSpace {
     static let name = "paragraph-analysis-scroll"
 }
 
+private struct ScrollBoundaryState: Equatable {
+    let isAtTop: Bool
+    let isAtBottom: Bool
+}
+
 private struct ScrollContentFramePreferenceKey: PreferenceKey {
     static var defaultValue = CGRect.null
 
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
         value = nextValue()
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func trackScrollBoundaries(
+        viewportHeight: CGFloat,
+        isAtTop: Binding<Bool>,
+        isAtBottom: Binding<Bool>
+    ) -> some View {
+        if #available(iOS 18.0, *) {
+            onScrollGeometryChange(for: ScrollBoundaryState.self) { geometry in
+                ScrollBoundaryState(
+                    isAtTop: geometry.visibleRect.minY <= 2,
+                    isAtBottom: geometry.visibleRect.maxY >= geometry.contentSize.height - 2
+                )
+            } action: { _, boundaryState in
+                isAtTop.wrappedValue = boundaryState.isAtTop
+                isAtBottom.wrappedValue = boundaryState.isAtBottom
+            }
+        } else {
+            onPreferenceChange(ScrollContentFramePreferenceKey.self) { contentFrame in
+                guard !contentFrame.isNull else { return }
+                isAtTop.wrappedValue = contentFrame.minY >= -2
+                isAtBottom.wrappedValue = contentFrame.maxY <= viewportHeight + 2
+            }
+        }
     }
 }
 
