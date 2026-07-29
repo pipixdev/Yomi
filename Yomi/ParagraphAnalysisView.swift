@@ -15,6 +15,8 @@ struct ParagraphAnalysisView: View {
     private let textAnalyzer: JapaneseTextAnalyzer
 
     @AppStorage("analysis.fontScale") private var analysisFontScale = 1.0
+    @AppStorage(DictionaryLookupPreferences.externalLookupEnabledKey) private var isExternalDictionaryEnabled = false
+    @AppStorage(DictionaryLookupPreferences.externalLookupURLTemplateKey) private var externalDictionaryURLTemplate = ""
     @State private var activePresentation: TokenPresentation?
     @State private var contentHeight: CGFloat = 1
     @State private var currentIndex: Int
@@ -224,7 +226,7 @@ struct ParagraphAnalysisView: View {
             highlightedRange: highlightedSpeechRange,
             contentHeight: $contentHeight,
             onSelectToken: { token in
-                activePresentation = .forToken(token)
+                openDictionary(for: token)
             }
         )
         .frame(height: max(contentHeight, 1))
@@ -233,6 +235,27 @@ struct ParagraphAnalysisView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 #endif
     }
+
+#if canImport(UIKit)
+    private func openDictionary(for token: ReaderToken) {
+        let presentation = TokenPresentation.forToken(token)
+        guard
+            isExternalDictionaryEnabled,
+            let url = DictionaryLookupPreferences.externalLookupURL(
+                for: presentation.term,
+                template: externalDictionaryURLTemplate
+            )
+        else {
+            activePresentation = presentation
+            return
+        }
+
+        UIApplication.shared.open(url, options: [:]) { didOpen in
+            guard !didOpen else { return }
+            activePresentation = presentation
+        }
+    }
+#endif
 }
 
 private enum ScrollTarget: Hashable {
@@ -261,6 +284,13 @@ private struct ScrollBottomPositionPreferenceKey: PreferenceKey {
 
 private enum TokenPresentation: Identifiable {
     case dictionary(term: String)
+
+    var term: String {
+        switch self {
+        case .dictionary(let term):
+            return term
+        }
+    }
 
     var id: String {
         switch self {

@@ -12,6 +12,8 @@ struct ReaderPreferencesView: View {
     @AppStorage("reader.pageMarginsScale") private var readerPageMarginsScale = 1.0
     @AppStorage("reader.fontOption") private var readerFontOptionRawValue = ReaderFontOption.mincho.rawValue
     @AppStorage(EdgeTTSClient.enabledDefaultsKey) private var isEdgeTTSEnabled = false
+    @AppStorage(DictionaryLookupPreferences.externalLookupEnabledKey) private var isExternalDictionaryEnabled = false
+    @AppStorage(DictionaryLookupPreferences.externalLookupURLTemplateKey) private var externalDictionaryURLTemplate = ""
 
     var body: some View {
         NavigationStack {
@@ -23,7 +25,9 @@ struct ReaderPreferencesView: View {
                             readerFontScale: $readerFontScale,
                             analysisFontScale: $analysisFontScale,
                             readerPageMarginsScale: $readerPageMarginsScale,
-                            isEdgeTTSEnabled: $isEdgeTTSEnabled
+                            isEdgeTTSEnabled: $isEdgeTTSEnabled,
+                            isExternalDictionaryEnabled: $isExternalDictionaryEnabled,
+                            externalDictionaryURLTemplate: $externalDictionaryURLTemplate
                         )
                     } label: {
                         Label(String(localized: "Reader"), systemImage: "textformat.size")
@@ -48,6 +52,8 @@ private struct ReaderSettingsDetailView: View {
     @Binding var analysisFontScale: Double
     @Binding var readerPageMarginsScale: Double
     @Binding var isEdgeTTSEnabled: Bool
+    @Binding var isExternalDictionaryEnabled: Bool
+    @Binding var externalDictionaryURLTemplate: String
 
     private var fontScaleSummary: String {
         "\(Int((readerFontScale * 100).rounded()))%"
@@ -98,6 +104,25 @@ private struct ReaderSettingsDetailView: View {
                 Toggle(String(localized: "Experimental Edge Online Voice"), isOn: $isEdgeTTSEnabled)
             } footer: {
                 Text(String(localized: "When enabled, paragraph text is sent to Microsoft's online speech service. Failed requests fall back to the system voice."))
+            }
+
+            Section {
+                Toggle(String(localized: "Open Words in External Dictionary"), isOn: $isExternalDictionaryEnabled)
+
+                if isExternalDictionaryEnabled {
+                    TextField(
+                        String(localized: "Dictionary URL Scheme"),
+                        text: $externalDictionaryURLTemplate,
+                        prompt: Text("mojisho://?search=搜索内容")
+                    )
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+#if os(iOS)
+                    .keyboardType(.URL)
+#endif
+                }
+            } footer: {
+                Text(String(localized: "Use 搜索内容 or {term} as the search placeholder. If the URL cannot be opened, Yomi uses the system dictionary."))
             }
         }
         .navigationTitle(String(localized: "Reader"))

@@ -1026,6 +1026,23 @@
         }
       }
     },
+    "Dictionary URL Scheme" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictionary URL Scheme"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "词典 URL Scheme"
+          }
+        }
+      }
+    },
     "Display" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1719,6 +1736,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开导航"
+          }
+        }
+      }
+    },
+    "Open Words in External Dictionary" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Words in External Dictionary"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用外部词典查词"
           }
         }
       }
@@ -2471,6 +2505,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未命名参考"
+          }
+        }
+      }
+    },
+    "Use 搜索内容 or {term} as the search placeholder. If the URL cannot be opened, Yomi uses the system dictionary." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use 搜索内容 or {term} as the search placeholder. If the URL cannot be opened, Yomi uses the system dictionary."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用“搜索内容”或“{term}”作为查词占位符。如果无法打开该 URL，Yomi 将使用系统词典。"
           }
         }
       }

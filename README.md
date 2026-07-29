@@ -12,6 +12,7 @@ It currently focuses on a few core experiences:
 - Adding ruby / furigana annotations to Japanese text
 - Opening paragraph analysis by tapping reading text, with vertical reading, an upward pull at the bottom to advance, a downward pull at the top to return to the previous paragraph, and return-to-paragraph positioning
 - Running MeCab-based paragraph token analysis for faster word inspection during reading
+- Looking up analyzed words in the native iOS dictionary or an optional configurable external dictionary URL scheme
 - Reading analyzed paragraphs aloud with synchronized word highlighting
 - Saving reading location and progress so users can continue later
 
