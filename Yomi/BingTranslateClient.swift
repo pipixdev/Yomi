@@ -3,6 +3,7 @@
 //  Yomi
 //
 
+import CryptoKit
 import Foundation
 
 enum BingTranslateClient {
@@ -13,6 +14,16 @@ enum BingTranslateClient {
         targetLanguage: String
     ) async throws -> [String] {
         try await service.translate(lines, targetLanguage: targetLanguage)
+    }
+
+    static func cachedTranslation(
+        for lines: [String],
+        targetLanguage: String
+    ) async -> [String]? {
+        await service.cachedTranslation(
+            for: lines,
+            targetLanguage: targetLanguage
+        )
     }
 
     static func preferredTargetLanguage() -> String {
@@ -49,6 +60,12 @@ private actor BingTranslateService {
     private var accessToken: String?
     private var accessTokenExpiration = Date.distantPast
     private var websiteConfiguration: WebsiteConfiguration?
+    private let translationCacheDirectoryURL = FileManager.default.urls(
+        for: .cachesDirectory,
+        in: .userDomainMask
+    ).first?
+        .appendingPathComponent("Translations", isDirectory: true)
+        .appendingPathComponent("v1", isDirectory: true)
     private var translations: [String: [String]] = [:]
 
     enum ClientError: Error {
@@ -71,8 +88,15 @@ private actor BingTranslateService {
         )
 #endif
 
-        let cacheKey = ([targetLanguage] + lines).joined(separator: "\u{1F}")
-        if let cachedTranslation = translations[cacheKey] {
+        let cacheKey = translationCacheKey(
+            for: lines,
+            targetLanguage: targetLanguage
+        )
+        if let cachedTranslation = cachedTranslation(
+            for: lines,
+            targetLanguage: targetLanguage,
+            cacheKey: cacheKey
+        ) {
             return cachedTranslation
         }
 
@@ -103,7 +127,103 @@ private actor BingTranslateService {
             )
         }
         translations[cacheKey] = result
+        persistTranslation(
+            result,
+            sourceLines: lines,
+            targetLanguage: targetLanguage,
+            cacheKey: cacheKey
+        )
         return result
+    }
+
+    func cachedTranslation(
+        for lines: [String],
+        targetLanguage: String
+    ) -> [String]? {
+        guard !lines.isEmpty else { return nil }
+        return cachedTranslation(
+            for: lines,
+            targetLanguage: targetLanguage,
+            cacheKey: translationCacheKey(
+                for: lines,
+                targetLanguage: targetLanguage
+            )
+        )
+    }
+
+    private func cachedTranslation(
+        for lines: [String],
+        targetLanguage: String,
+        cacheKey: String
+    ) -> [String]? {
+        if let cachedTranslation = translations[cacheKey] {
+            return cachedTranslation
+        }
+
+        guard
+            let cacheURL = translationCacheURL(for: cacheKey),
+            let data = try? Data(contentsOf: cacheURL),
+            let record = try? JSONDecoder().decode(
+                TranslationCacheRecord.self,
+                from: data
+            ),
+            record.sourceLines == lines,
+            record.targetLanguage == targetLanguage,
+            record.translatedLines.count == lines.count,
+            record.translatedLines.allSatisfy({ !$0.isEmpty })
+        else {
+            return nil
+        }
+
+        translations[cacheKey] = record.translatedLines
+        return record.translatedLines
+    }
+
+    private func persistTranslation(
+        _ translatedLines: [String],
+        sourceLines: [String],
+        targetLanguage: String,
+        cacheKey: String
+    ) {
+        guard
+            let translationCacheDirectoryURL,
+            let cacheURL = translationCacheURL(for: cacheKey)
+        else {
+            return
+        }
+
+        do {
+            try FileManager.default.createDirectory(
+                at: translationCacheDirectoryURL,
+                withIntermediateDirectories: true
+            )
+            let record = TranslationCacheRecord(
+                sourceLines: sourceLines,
+                targetLanguage: targetLanguage,
+                translatedLines: translatedLines
+            )
+            try JSONEncoder().encode(record).write(to: cacheURL, options: .atomic)
+        } catch {
+#if DEBUG
+            print("Yomi could not persist translation cache: \(error)")
+#endif
+        }
+    }
+
+    private func translationCacheKey(
+        for lines: [String],
+        targetLanguage: String
+    ) -> String {
+        let input = ([targetLanguage] + lines).joined(separator: "\u{1F}")
+        return SHA256.hash(data: Data(input.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    private func translationCacheURL(for cacheKey: String) -> URL? {
+        translationCacheDirectoryURL?
+            .appendingPathComponent(cacheKey)
+            .appendingPathExtension("json")
     }
 
     private func validAccessToken() async throws -> String {
@@ -362,6 +482,12 @@ private actor BingTranslateService {
         websiteConfiguration = configuration
         return configuration
     }
+}
+
+private nonisolated struct TranslationCacheRecord: Codable, Sendable {
+    let sourceLines: [String]
+    let targetLanguage: String
+    let translatedLines: [String]
 }
 
 private struct TranslationRequest: Encodable {

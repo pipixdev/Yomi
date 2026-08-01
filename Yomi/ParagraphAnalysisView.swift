@@ -116,6 +116,9 @@ struct ParagraphAnalysisView: View {
         }
         .navigationTitle(String(localized: "Parse"))
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: translationCacheIdentity) {
+            await restoreCachedTranslation()
+        }
 #if canImport(UIKit)
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -304,10 +307,7 @@ struct ParagraphAnalysisView: View {
     }
 
     private func translateCurrentParagraph() {
-        let sourceLines = paragraphs[currentIndex]
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let sourceLines = translationSourceLines
         guard !sourceLines.isEmpty else { return }
 
         let requestID = UUID()
@@ -334,6 +334,46 @@ struct ParagraphAnalysisView: View {
                     translationState = .failed
                 }
             }
+        }
+    }
+
+    private var translationSourceLines: [String] {
+        paragraphs[currentIndex]
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private var translationCacheIdentity: String {
+        ([BingTranslateClient.preferredTargetLanguage()] + translationSourceLines)
+            .joined(separator: "\u{1F}")
+    }
+
+    private func restoreCachedTranslation() async {
+        guard translationState == .idle else { return }
+
+        let paragraphIndex = currentIndex
+        let sourceLines = translationSourceLines
+        let targetLanguage = BingTranslateClient.preferredTargetLanguage()
+        guard !sourceLines.isEmpty else { return }
+
+        guard let translatedLines = await BingTranslateClient.cachedTranslation(
+            for: sourceLines,
+            targetLanguage: targetLanguage
+        ) else {
+            return
+        }
+
+        guard
+            !Task.isCancelled,
+            currentIndex == paragraphIndex,
+            translationState == .idle
+        else {
+            return
+        }
+
+        withAnimation(.easeInOut(duration: 0.18)) {
+            translationState = .translated(translatedLines)
         }
     }
 
