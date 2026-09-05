@@ -83,6 +83,16 @@ struct ParagraphAnalysisView: View {
                         }
                     }
                     .background {
+#if canImport(UIKit)
+                        ParagraphScrollGestureObserver { translation, startedAtTop, startedAtBottom in
+                            handleParagraphDrag(
+                                translation: translation,
+                                startedAtTop: startedAtTop,
+                                startedAtBottom: startedAtBottom,
+                                scrollProxy: scrollProxy
+                            )
+                        }
+#else
                         GeometryReader { geometry in
                             let frame = geometry.frame(in: .named(ScrollCoordinateSpace.name))
                             Color.clear.preference(
@@ -90,8 +100,10 @@ struct ParagraphAnalysisView: View {
                                 value: frame
                             )
                         }
+#endif
                     }
                 }
+#if !canImport(UIKit)
                 .coordinateSpace(name: ScrollCoordinateSpace.name)
                 .trackScrollBoundaries(
                     viewportHeight: viewportGeometry.size.height,
@@ -109,9 +121,17 @@ struct ParagraphAnalysisView: View {
                             }
                         }
                         .onEnded { value in
-                            handleParagraphDrag(value, scrollProxy: scrollProxy)
+                            handleParagraphDrag(
+                                translation: value.translation,
+                                startedAtTop: paragraphDragStartedAtTop ?? isAtScrollTop,
+                                startedAtBottom: paragraphDragStartedAtBottom ?? isAtScrollBottom,
+                                scrollProxy: scrollProxy
+                            )
+                            paragraphDragStartedAtTop = nil
+                            paragraphDragStartedAtBottom = nil
                         }
                 )
+#endif
             }
         }
         .navigationTitle(String(localized: "Parse"))
@@ -191,18 +211,15 @@ struct ParagraphAnalysisView: View {
 #endif
 
     private func handleParagraphDrag(
-        _ value: DragGesture.Value,
+        translation: CGSize,
+        startedAtTop: Bool,
+        startedAtBottom: Bool,
         scrollProxy: ScrollViewProxy
     ) {
-        let startedAtTop = paragraphDragStartedAtTop ?? isAtScrollTop
-        let startedAtBottom = paragraphDragStartedAtBottom ?? isAtScrollBottom
-        paragraphDragStartedAtTop = nil
-        paragraphDragStartedAtBottom = nil
-
-        let verticalDistance = value.translation.height
+        let verticalDistance = translation.height
         guard
             abs(verticalDistance) >= 55,
-            abs(verticalDistance) > abs(value.translation.width)
+            abs(verticalDistance) > abs(translation.width)
         else {
             return
         }
@@ -416,6 +433,103 @@ private enum ParagraphTranslationState: Equatable {
         return false
     }
 }
+
+#if canImport(UIKit)
+/// Observe the enclosing scroll view's existing pan recognizer. This avoids
+/// competing SwiftUI gestures and preference-coordinate differences on iOS 16.
+private struct ParagraphScrollGestureObserver: UIViewRepresentable {
+    let onDragEnded: (CGSize, Bool, Bool) -> Void
+
+    func makeUIView(context: Context) -> ObserverView {
+        let view = ObserverView()
+        view.isUserInteractionEnabled = false
+        view.onDragEnded = onDragEnded
+        return view
+    }
+
+    func updateUIView(_ uiView: ObserverView, context: Context) {
+        uiView.onDragEnded = onDragEnded
+        uiView.attachToScrollView()
+    }
+
+    static func dismantleUIView(_ uiView: ObserverView, coordinator: ()) {
+        uiView.detach()
+    }
+
+    final class ObserverView: UIView {
+        var onDragEnded: ((CGSize, Bool, Bool) -> Void)?
+        private weak var observedScrollView: UIScrollView?
+        private var startingBoundary: ScrollBoundaryState?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window == nil {
+                detach()
+            } else {
+                attachToScrollView()
+            }
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            attachToScrollView()
+        }
+
+        func attachToScrollView() {
+            var ancestor = superview
+            while let view = ancestor {
+                if let scrollView = view as? UIScrollView {
+                    guard observedScrollView !== scrollView else { return }
+                    detach()
+                    observedScrollView = scrollView
+                    // Short paragraphs must also accept pulls in both directions.
+                    scrollView.alwaysBounceVertical = true
+                    scrollView.panGestureRecognizer.addTarget(self, action: #selector(handlePan(_:)))
+                    return
+                }
+                ancestor = view.superview
+            }
+        }
+
+        func detach() {
+            observedScrollView?.panGestureRecognizer.removeTarget(self, action: #selector(handlePan(_:)))
+            observedScrollView = nil
+            startingBoundary = nil
+        }
+
+        @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+            guard let scrollView = observedScrollView else { return }
+            switch gesture.state {
+            case .began:
+                let top = -scrollView.adjustedContentInset.top
+                let bottom = max(
+                    top,
+                    scrollView.contentSize.height - scrollView.bounds.height
+                        + scrollView.adjustedContentInset.bottom
+                )
+                startingBoundary = ScrollBoundaryState(
+                    isAtTop: scrollView.contentOffset.y <= top + 2,
+                    isAtBottom: scrollView.contentOffset.y >= bottom - 2
+                )
+            case .ended:
+                let boundary = startingBoundary
+                startingBoundary = nil
+                guard let boundary else { return }
+                let translation = gesture.translation(in: scrollView)
+                onDragEnded?(
+                    CGSize(width: translation.x, height: translation.y),
+                    boundary.isAtTop,
+                    boundary.isAtBottom
+                )
+            case .cancelled, .failed:
+                startingBoundary = nil
+            default:
+                break
+            }
+        }
+    }
+}
+#endif
 
 private enum ScrollTarget: Hashable {
     case top
