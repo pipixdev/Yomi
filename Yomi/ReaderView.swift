@@ -19,6 +19,7 @@ import WebKit
 
 struct ReaderView: View {
     let bookID: UUID
+    var bookmarkLocatorJSON: String? = nil
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: LibraryStore
@@ -38,7 +39,8 @@ struct ReaderView: View {
                     bookID: bookID,
                     normalizedURL: store.normalizedURL(for: book),
                     epubURL: epubURL,
-                    initialLocatorJSON: book.lastReadLocatorJSON,
+                    initialLocatorJSON: bookmarkLocatorJSON ?? book.lastReadLocatorJSON,
+                    store: store,
                     fontScale: readerFontScale,
                     pageMarginsScale: readerPageMarginsScale,
                     fontOptionRawValue: readerFontOptionRawValue,
@@ -74,6 +76,7 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
     let normalizedURL: URL?
     let epubURL: URL
     let initialLocatorJSON: String?
+    let store: LibraryStore
     let fontScale: Double
     let pageMarginsScale: Double
     let fontOptionRawValue: String
@@ -86,6 +89,7 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
             normalizedURL: normalizedURL,
             epubURL: epubURL,
             initialLocatorJSON: initialLocatorJSON,
+            store: store,
             initialFontScale: fontScale,
             initialPageMarginsScale: pageMarginsScale,
             initialFontOptionRawValue: fontOptionRawValue,
@@ -119,6 +123,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     private let bookID: UUID
     private let normalizedURL: URL?
     private let epubURL: URL
+    private let store: LibraryStore
     private let initialLocatorJSON: String?
     private let onLocationChange: (Locator) -> Void
     private var readerFontScale: Double
@@ -137,11 +142,13 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         normalizedURL: URL?,
         epubURL: URL,
         initialLocatorJSON: String?,
+        store: LibraryStore,
         initialFontScale: Double,
         initialPageMarginsScale: Double,
         initialFontOptionRawValue: String,
         onLocationChange: @escaping (Locator) -> Void
     ) {
+        self.store = store
         self.bookID = bookID
         self.normalizedURL = normalizedURL
         self.epubURL = epubURL
@@ -347,7 +354,21 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             return
         }
 
-        presentParagraphAnalysis(paragraphs: paragraphs, initialIndex: index)
+        guard let resourceURL = message.frameInfo.request.url,
+              let link = publication?.readingOrder.first(where: {
+                  resourceURL.path.hasSuffix("/" + ($0.href.removingPercentEncoding ?? $0.href).trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+              }),
+              let selectors = body["selectors"] as? [String],
+              let highlights = body["highlights"] as? [String],
+              selectors.count == paragraphs.count, highlights.count == paragraphs.count else { return }
+        let locators = zip(selectors, highlights).compactMap { selector, highlight -> String? in
+            let json: [String: Any] = ["href": link.href, "type": "application/xhtml+xml",
+                "locations": ["cssSelector": selector], "text": ["highlight": highlight]]
+            guard let data = try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
+        guard locators.count == paragraphs.count else { return }
+        presentParagraphAnalysis(paragraphs: paragraphs, initialIndex: index, locators: locators)
     }
 
     func applyUserPreferences(fontScale: Double, pageMarginsScale: Double, fontOptionRawValue: String) {
@@ -392,7 +413,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         }
     }
 
-    private func presentParagraphAnalysis(paragraphs: [String], initialIndex: Int) {
+    private func presentParagraphAnalysis(paragraphs: [String], initialIndex: Int, locators: [String]) {
         guard !paragraphs.isEmpty, paragraphs.indices.contains(initialIndex) else {
             return
         }
@@ -404,6 +425,9 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             rootView: ParagraphAnalysisView(
                 paragraphs: paragraphs,
                 initialIndex: initialIndex,
+                store: store,
+                bookID: bookID,
+                bookmarkLocators: locators,
                 onParagraphChange: { [weak self] index in
                     self?.pendingAnalysisParagraphIndex = index
                 }
@@ -444,6 +468,16 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         }))
         .filter(entry => entry.target && entry.text);
 
+      const selectorFor = element => {
+        const parts = [];
+        while (element && element !== document.documentElement) {
+          const position = Array.from(element.parentElement.children).indexOf(element) + 1;
+          parts.unshift(`${element.localName}:nth-child(${position})`);
+          element = element.parentElement;
+        }
+        return 'html > ' + parts.join(' > ');
+      };
+
       const openAnalysis = target => {
         const entries = paragraphEntries();
         const index = entries.findIndex(entry => entry.target === target);
@@ -453,6 +487,8 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         if (!handler || !handler.postMessage) return;
         handler.postMessage({
           paragraphs: entries.map(entry => entry.text),
+          selectors: entries.map(entry => selectorFor(entry.target)),
+          highlights: entries.map(entry => entry.target.textContent),
           index
         });
       };

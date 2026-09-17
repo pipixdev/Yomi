@@ -15,6 +15,9 @@ struct ReaderPreferencesView: View {
     @AppStorage(DictionaryLookupPreferences.externalLookupEnabledKey) private var isExternalDictionaryEnabled = false
     @AppStorage(DictionaryLookupPreferences.externalLookupURLTemplateKey) private var externalDictionaryURLTemplate = ""
 
+    @AppStorage(BookTranslationPreferences.concurrencyKey)
+    private var translationConcurrency = BookTranslationPreferences.defaultConcurrency
+
     var body: some View {
         NavigationStack {
             Form {
@@ -38,6 +41,15 @@ struct ReaderPreferencesView: View {
                     } label: {
                         Label(String(localized: "Appearance"), systemImage: "circle.lefthalf.filled")
                     }
+                }
+                Section {
+                    Stepper(value: $translationConcurrency, in: BookTranslationPreferences.concurrencyRange) {
+                        Text("Concurrent paragraphs: \(translationConcurrency)")
+                    }
+                } header: {
+                    Text("Full-book translation")
+                } footer: {
+                    Text("Maximum paragraphs translated at once per book. Changes apply to new tasks.")
                 }
             }
             .navigationTitle(String(localized: "Settings"))

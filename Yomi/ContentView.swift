@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     enum SidebarSection: Hashable {
         case bookshelf
+        case bookmarks
         case settings
     }
 
@@ -13,6 +14,9 @@ struct ContentView: View {
             List(selection: $selectedSection) {
                 Label("Bookshelf", systemImage: "books.vertical")
                     .tag(SidebarSection.bookshelf)
+
+                Label("Bookmarks", systemImage: "bookmark")
+                    .tag(SidebarSection.bookmarks)
 
                 Label("Settings", systemImage: "gearshape")
                     .tag(SidebarSection.settings)
@@ -25,6 +29,8 @@ struct ContentView: View {
             switch selectedSection ?? .bookshelf {
             case .bookshelf:
                 BookshelfView()
+            case .bookmarks:
+                BookmarksView()
             case .settings:
                 ReaderPreferencesView()
             }

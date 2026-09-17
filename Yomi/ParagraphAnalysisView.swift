@@ -10,6 +10,9 @@ import WebKit
 #endif
 
 struct ParagraphAnalysisView: View {
+    @ObservedObject var store: LibraryStore
+    let bookID: UUID
+    let bookmarkLocators: [String]
     let paragraphs: [String]
     let onParagraphChange: (Int) -> Void
     private let textAnalyzer: JapaneseTextAnalyzer
@@ -35,6 +38,9 @@ struct ParagraphAnalysisView: View {
     init(
         paragraphs: [String],
         initialIndex: Int,
+        store: LibraryStore,
+        bookID: UUID,
+        bookmarkLocators: [String],
         onParagraphChange: @escaping (Int) -> Void
     ) {
         let normalizedParagraphs = paragraphs
@@ -44,6 +50,9 @@ struct ParagraphAnalysisView: View {
         let safeIndex = min(max(initialIndex, 0), safeParagraphs.count - 1)
         let analyzer = JapaneseTextAnalyzer()
 
+        self.store = store
+        self.bookID = bookID
+        self.bookmarkLocators = bookmarkLocators
         self.paragraphs = safeParagraphs
         self.onParagraphChange = onParagraphChange
         textAnalyzer = analyzer
@@ -58,7 +67,14 @@ struct ParagraphAnalysisView: View {
     var body: some View {
         GeometryReader { viewportGeometry in
             ScrollViewReader { scrollProxy in
-                ScrollView {
+                ParagraphScrollContainer(onDragEnded: { translation, atTop, atBottom in
+                    handleParagraphDrag(
+                        translation: translation,
+                        startedAtTop: atTop,
+                        startedAtBottom: atBottom,
+                        scrollProxy: scrollProxy
+                    )
+                }) {
                     VStack(spacing: 0) {
                         Color.clear
                             .frame(height: 1)
@@ -79,20 +95,10 @@ struct ParagraphAnalysisView: View {
                                 .id(currentIndex)
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 16)
-                                .transition(.opacity)
                         }
                     }
                     .background {
-#if canImport(UIKit)
-                        ParagraphScrollGestureObserver { translation, startedAtTop, startedAtBottom in
-                            handleParagraphDrag(
-                                translation: translation,
-                                startedAtTop: startedAtTop,
-                                startedAtBottom: startedAtBottom,
-                                scrollProxy: scrollProxy
-                            )
-                        }
-#else
+#if !canImport(UIKit)
                         GeometryReader { geometry in
                             let frame = geometry.frame(in: .named(ScrollCoordinateSpace.name))
                             Color.clear.preference(
@@ -134,6 +140,9 @@ struct ParagraphAnalysisView: View {
 #endif
             }
         }
+        .alert("Bookmark error", isPresented: Binding(get: { store.bookmarkError != nil }, set: { if !$0 { store.bookmarkError = nil } })) {
+            Button("OK") { store.bookmarkError = nil }
+        } message: { Text(store.bookmarkError ?? "") }
         .navigationTitle(String(localized: "Parse"))
         .navigationBarTitleDisplayMode(.inline)
         .task(id: translationCacheIdentity) {
@@ -152,6 +161,16 @@ struct ParagraphAnalysisView: View {
             }
 
             ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if bookmarkLocators.indices.contains(currentIndex) {
+                    let locator = bookmarkLocators[currentIndex]
+                    let saved = store.isBookmarked(bookID: bookID, locatorJSON: locator)
+                    Button {
+                        store.toggleBookmark(bookID: bookID, text: paragraphs[currentIndex], locatorJSON: locator)
+                    } label: {
+                        Image(systemName: saved ? "bookmark.fill" : "bookmark")
+                    }
+                    .accessibilityLabel(String(localized: saved ? "Remove bookmark" : "Bookmark paragraph"))
+                }
                 Button {
                     translateCurrentParagraph()
                 } label: {
@@ -210,18 +229,19 @@ struct ParagraphAnalysisView: View {
     }
 #endif
 
+    @discardableResult
     private func handleParagraphDrag(
         translation: CGSize,
         startedAtTop: Bool,
         startedAtBottom: Bool,
         scrollProxy: ScrollViewProxy
-    ) {
+    ) -> Bool {
         let verticalDistance = translation.height
         guard
             abs(verticalDistance) >= 55,
             abs(verticalDistance) > abs(translation.width)
         else {
-            return
+            return false
         }
 
         let proposedIndex: Int
@@ -230,26 +250,30 @@ struct ParagraphAnalysisView: View {
         } else if verticalDistance > 0, startedAtTop {
             proposedIndex = currentIndex - 1
         } else {
-            return
+            return false
         }
 
-        guard paragraphs.indices.contains(proposedIndex) else { return }
+        guard paragraphs.indices.contains(proposedIndex) else { return false }
 
 #if canImport(UIKit)
         speechPlayback.stop()
         highlightedSpeechRange = nil
 #endif
-        activePresentation = nil
-        contentHeight = 1
-        translationRequestID = nil
-        translationState = .idle
-
-        withAnimation(.easeInOut(duration: 0.18)) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            activePresentation = nil
+            contentHeight = 1
+            translationRequestID = nil
+            translationState = .idle
             currentIndex = proposedIndex
             tokens = textAnalyzer.tokens(for: paragraphs[proposedIndex])
+#if !canImport(UIKit)
             scrollProxy.scrollTo(ScrollTarget.top, anchor: .top)
+#endif
         }
         onParagraphChange(proposedIndex)
+        return true
     }
 
     @ViewBuilder
@@ -355,10 +379,7 @@ struct ParagraphAnalysisView: View {
     }
 
     private var translationSourceLines: [String] {
-        paragraphs[currentIndex]
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        BingTranslateClient.sourceLines(for: paragraphs[currentIndex])
     }
 
     private var translationCacheIdentity: String {
@@ -434,71 +455,83 @@ private enum ParagraphTranslationState: Equatable {
     }
 }
 
+/// Own the scroll view rather than searching SwiftUI's private view hierarchy.
 #if canImport(UIKit)
-/// Observe the enclosing scroll view's existing pan recognizer. This avoids
-/// competing SwiftUI gestures and preference-coordinate differences on iOS 16.
-private struct ParagraphScrollGestureObserver: UIViewRepresentable {
-    let onDragEnded: (CGSize, Bool, Bool) -> Void
+private struct ParagraphScrollContainer<Content: View>: UIViewControllerRepresentable {
+    let onDragEnded: (CGSize, Bool, Bool) -> Bool
+    @ViewBuilder let content: () -> Content
 
-    func makeUIView(context: Context) -> ObserverView {
-        let view = ObserverView()
-        view.isUserInteractionEnabled = false
-        view.onDragEnded = onDragEnded
-        return view
+    func makeUIViewController(context: Context) -> Controller {
+        Controller(content: content(), onDragEnded: onDragEnded)
     }
 
-    func updateUIView(_ uiView: ObserverView, context: Context) {
-        uiView.onDragEnded = onDragEnded
-        uiView.attachToScrollView()
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.host.rootView = content()
+        controller.onDragEnded = onDragEnded
+        controller.host.view.invalidateIntrinsicContentSize()
     }
 
-    static func dismantleUIView(_ uiView: ObserverView, coordinator: ()) {
-        uiView.detach()
-    }
-
-    final class ObserverView: UIView {
-        var onDragEnded: ((CGSize, Bool, Bool) -> Void)?
-        private weak var observedScrollView: UIScrollView?
+    final class Controller: UIViewController, UIGestureRecognizerDelegate {
+        let scrollView = UIScrollView()
+        let host: UIHostingController<Content>
+        var onDragEnded: ((CGSize, Bool, Bool) -> Bool)?
         private var startingBoundary: ScrollBoundaryState?
 
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            if window == nil {
-                detach()
-            } else {
-                attachToScrollView()
-            }
+        init(content: Content, onDragEnded: @escaping (CGSize, Bool, Bool) -> Bool) {
+            host = UIHostingController(rootView: content)
+            self.onDragEnded = onDragEnded
+            super.init(nibName: nil, bundle: nil)
         }
 
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            attachToScrollView()
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+            view.backgroundColor = .clear
+            scrollView.translatesAutoresizingMaskIntoConstraints = false
+            scrollView.bounces = false
+            scrollView.alwaysBounceVertical = false
+            view.addSubview(scrollView)
+            addChild(host)
+            host.sizingOptions = .intrinsicContentSize
+            host.view.backgroundColor = .clear
+            host.view.translatesAutoresizingMaskIntoConstraints = false
+            scrollView.addSubview(host.view)
+            host.didMove(toParent: self)
+            NSLayoutConstraint.activate([
+                scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+                scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                host.view.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+                host.view.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+                host.view.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+                host.view.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+                host.view.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor)
+            ])
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+            pan.delegate = self
+            pan.cancelsTouchesInView = false
+            pan.maximumNumberOfTouches = 1
+            // Attach to the viewport, so blank space below short text also accepts swipes.
+            view.addGestureRecognizer(pan)
         }
 
-        func attachToScrollView() {
-            var ancestor = superview
-            while let view = ancestor {
-                if let scrollView = view as? UIScrollView {
-                    guard observedScrollView !== scrollView else { return }
-                    detach()
-                    observedScrollView = scrollView
-                    // Short paragraphs must also accept pulls in both directions.
-                    scrollView.alwaysBounceVertical = true
-                    scrollView.panGestureRecognizer.addTarget(self, action: #selector(handlePan(_:)))
-                    return
-                }
-                ancestor = view.superview
-            }
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let velocity = pan.velocity(in: view)
+            return abs(velocity.y) > abs(velocity.x)
         }
 
-        func detach() {
-            observedScrollView?.panGestureRecognizer.removeTarget(self, action: #selector(handlePan(_:)))
-            observedScrollView = nil
-            startingBoundary = nil
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
         }
 
         @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-            guard let scrollView = observedScrollView else { return }
             switch gesture.state {
             case .began:
                 let top = -scrollView.adjustedContentInset.top
@@ -516,11 +549,20 @@ private struct ParagraphScrollGestureObserver: UIViewRepresentable {
                 startingBoundary = nil
                 guard let boundary else { return }
                 let translation = gesture.translation(in: scrollView)
-                onDragEnded?(
+                let didSwitch = onDragEnded?(
                     CGSize(width: translation.x, height: translation.y),
                     boundary.isAtTop,
                     boundary.isAtBottom
-                )
+                ) ?? false
+                if didSwitch {
+                    // Do not carry the previous paragraph's fling into the new page.
+                    scrollView.panGestureRecognizer.isEnabled = false
+                    scrollView.panGestureRecognizer.isEnabled = true
+                    scrollView.setContentOffset(
+                        CGPoint(x: scrollView.contentOffset.x, y: -scrollView.adjustedContentInset.top),
+                        animated: false
+                    )
+                }
             case .cancelled, .failed:
                 startingBoundary = nil
             default:
@@ -528,6 +570,13 @@ private struct ParagraphScrollGestureObserver: UIViewRepresentable {
             }
         }
     }
+}
+#else
+private struct ParagraphScrollContainer<Content: View>: View {
+    let onDragEnded: (CGSize, Bool, Bool) -> Bool
+    @ViewBuilder let content: () -> Content
+
+    var body: some View { ScrollView { content() } }
 }
 #endif
 

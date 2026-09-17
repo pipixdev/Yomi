@@ -26,6 +26,7 @@ struct BookshelfView: View {
     @State private var selectedBook: ReaderSelection?
     @State private var pendingRemoval: BookRecord?
     @State private var showingSettings = false
+    @State private var showingBookmarks = false
 
 #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -58,6 +59,11 @@ struct BookshelfView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if horizontalSizeClass == .compact {
                         settingsButton
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showingBookmarks = true } label: {
+                        Label("Bookmarks", systemImage: "bookmark")
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -115,6 +121,9 @@ struct BookshelfView: View {
                 case .failure(let error):
                     store.importError = error.localizedDescription
                 }
+            }
+            .sheet(isPresented: $showingBookmarks) {
+                BookmarksView()
             }
             .sheet(isPresented: $showingTextImport) {
                 PlainTextImportView()
@@ -350,6 +359,16 @@ private struct BookCardView: View {
                 .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
                 .overlay(alignment: .topTrailing) {
                     Menu {
+                        if store.bookTranslations[book.id]?.phase == .running {
+                            Button { store.cancelBookTranslation(id: book.id) } label: {
+                                Label("Cancel translation", systemImage: "stop.circle")
+                            }
+                        } else {
+                            Button { store.translateBook(id: book.id) } label: {
+                                Label("Translate entire book", systemImage: "character.bubble")
+                            }
+                            .disabled(store.isImporting)
+                        }
                         Button(action: onRebuild) {
                             Label("Rebuild", systemImage: "arrow.triangle.2.circlepath")
                         }
@@ -369,6 +388,26 @@ private struct BookCardView: View {
                     .font(.headline)
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
+
+                if let translation = store.bookTranslations[book.id] {
+                    VStack(alignment: .leading, spacing: 4) {
+                        switch translation.phase {
+                        case .running:
+                            Text("Translating: \(translation.completed) / \(translation.total)")
+                            if translation.total > 0 {
+                                ProgressView(value: Double(translation.completed), total: Double(translation.total))
+                            } else {
+                                ProgressView()
+                            }
+                        case .finished:
+                            Label("Translation cached", systemImage: "checkmark.circle")
+                        case .failed:
+                            Text("Translation paused. Try again to resume.")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
 
                 Text(book.author)
                     .font(.subheadline)

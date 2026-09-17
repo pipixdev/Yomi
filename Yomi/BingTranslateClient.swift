@@ -26,6 +26,12 @@ enum BingTranslateClient {
         )
     }
 
+    static func sourceLines(for paragraph: String) -> [String] {
+        paragraph.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
     static func preferredTargetLanguage() -> String {
         let preferredLanguage = Locale.preferredLanguages.first ?? "en"
         return preferredLanguage.lowercased().hasPrefix("zh") ? "zh-Hans" : "en"
@@ -42,6 +48,7 @@ private actor BingTranslateService {
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
         configuration.httpCookieStorage = nil
+        configuration.httpMaximumConnectionsPerHost = 120
         configuration.timeoutIntervalForRequest = 20
         configuration.timeoutIntervalForResource = 30
         return URLSession(configuration: configuration)
@@ -52,11 +59,14 @@ private actor BingTranslateService {
         configuration.urlCache = nil
         configuration.httpShouldSetCookies = true
         configuration.httpCookieAcceptPolicy = .always
+        configuration.httpMaximumConnectionsPerHost = 120
         configuration.timeoutIntervalForRequest = 20
         configuration.timeoutIntervalForResource = 30
         return URLSession(configuration: configuration)
     }()
 
+    private var authenticationTask: Task<String, Error>?
+    private var websiteConfigurationTask: Task<WebsiteConfiguration, Error>?
     private var accessToken: String?
     private var accessTokenExpiration = Date.distantPast
     private var websiteConfiguration: WebsiteConfiguration?
@@ -100,6 +110,7 @@ private actor BingTranslateService {
             return cachedTranslation
         }
 
+        try Task.checkCancellation()
         let result: [String]
         do {
             do {
@@ -118,6 +129,7 @@ private actor BingTranslateService {
                 )
             }
         } catch {
+            try Task.checkCancellation()
 #if DEBUG
             print("Yomi Bing Translate switching to website fallback: \(error)")
 #endif
@@ -231,6 +243,14 @@ private actor BingTranslateService {
             return accessToken
         }
 
+        if let authenticationTask { return try await authenticationTask.value }
+        let task = Task { try await self.fetchAccessToken() }
+        authenticationTask = task
+        defer { authenticationTask = nil }
+        return try await task.value
+    }
+
+    private func fetchAccessToken() async throws -> String {
         var request = URLRequest(url: authenticationURL)
         request.timeoutInterval = 15
         request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -437,6 +457,14 @@ private actor BingTranslateService {
             return websiteConfiguration
         }
 
+        if let websiteConfigurationTask { return try await websiteConfigurationTask.value }
+        let task = Task { try await self.fetchWebsiteConfiguration() }
+        websiteConfigurationTask = task
+        defer { websiteConfigurationTask = nil }
+        return try await task.value
+    }
+
+    private func fetchWebsiteConfiguration() async throws -> WebsiteConfiguration {
         var request = URLRequest(url: websiteURL)
         request.timeoutInterval = 20
         request.cachePolicy = .reloadIgnoringLocalCacheData

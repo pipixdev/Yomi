@@ -18,11 +18,16 @@ import ReadiumStreamer
 
 @MainActor
 final class LibraryStore: ObservableObject {
+    @Published private(set) var bookmarks: [ParagraphBookmark] = []
+    @Published var bookmarkError: String?
     @Published private(set) var books: [BookRecord] = []
     @Published var isImporting = false
     @Published var importProgressFraction: Double?
     @Published var importProgressLabel = String(localized: "Importing book…")
     @Published var importError: String?
+
+    @Published private(set) var bookTranslations: [UUID: BookTranslationProgress] = [:]
+    private var translationTasks: [UUID: Task<Void, Never>] = [:]
 
     private let manifestURL: URL
     private let fileManager: FileManager
@@ -47,10 +52,41 @@ final class LibraryStore: ObservableObject {
         }
 
         manifestURL = resolvedManifestURL
+        let bookmarksURL = resolvedManifestURL.deletingLastPathComponent().appendingPathComponent("bookmarks.json")
+        if fileManager.fileExists(atPath: bookmarksURL.path) {
+            do {
+                bookmarks = try JSONDecoder().decode([ParagraphBookmark].self, from: Data(contentsOf: bookmarksURL))
+            } catch { bookmarkError = error.localizedDescription }
+        }
 
         Task { [weak self] in
             await self?.importBundledBooksIfNeeded()
         }
+    }
+
+    func isBookmarked(bookID: UUID, locatorJSON: String) -> Bool {
+        bookmarks.contains { $0.bookID == bookID && $0.locatorJSON == locatorJSON }
+    }
+
+    func toggleBookmark(bookID: UUID, text: String, locatorJSON: String) {
+        if let existing = bookmarks.first(where: { $0.bookID == bookID && $0.locatorJSON == locatorJSON }) {
+            removeBookmark(id: existing.id)
+        } else {
+            saveBookmarks([ParagraphBookmark(id: UUID(), bookID: bookID, text: text,
+                locatorJSON: locatorJSON, createdAt: .now)] + bookmarks)
+        }
+    }
+
+    func removeBookmark(id: UUID) {
+        saveBookmarks(bookmarks.filter { $0.id != id })
+    }
+
+    private func saveBookmarks(_ updated: [ParagraphBookmark]) {
+        do {
+            let url = manifestURL.deletingLastPathComponent().appendingPathComponent("bookmarks.json")
+            try JSONEncoder().encode(updated).write(to: url, options: .atomic)
+            bookmarks = updated
+        } catch { bookmarkError = error.localizedDescription }
     }
 
     func book(id: UUID) -> BookRecord? {
@@ -76,6 +112,7 @@ final class LibraryStore: ObservableObject {
         do {
             let fingerprint = try fileFingerprint(for: url)
             let existingBook = books.first { $0.sourceFingerprint == fingerprint }
+            if let existingBook { cancelBookTranslation(id: existingBook.id) }
             let importedBook = try await importer.importBook(
                 bookID: existingBook?.id ?? UUID(),
                 from: url,
@@ -182,6 +219,8 @@ final class LibraryStore: ObservableObject {
     }
 
     func rebuildBook(id: UUID) async {
+        cancelBookTranslation(id: id)
+        bookTranslations[id] = nil
         guard let index = books.firstIndex(where: { $0.id == id }) else { return }
 
         isImporting = true
@@ -224,8 +263,11 @@ final class LibraryStore: ObservableObject {
     }
 
     func removeBook(id: UUID) {
+        cancelBookTranslation(id: id)
+        bookTranslations[id] = nil
         guard let index = books.firstIndex(where: { $0.id == id }) else { return }
         let book = books.remove(at: index)
+        saveBookmarks(bookmarks.filter { $0.bookID != id })
 
         do {
             try deleteFiles(for: book)
@@ -244,6 +286,74 @@ final class LibraryStore: ObservableObject {
         try? persist()
     }
 #endif
+
+    func translateBook(id: UUID) {
+        guard translationTasks[id] == nil, !isImporting,
+              let book = book(id: id), let directory = normalizedURL(for: book) else { return }
+        let targetLanguage = BingTranslateClient.preferredTargetLanguage()
+        bookTranslations[id] = BookTranslationProgress()
+        translationTasks[id] = Task {
+            do {
+                let extraction = Task.detached(priority: .utility) {
+                    try BookTranslationParagraphs.load(from: directory)
+                }
+                let paragraphs = try await withTaskCancellationHandler {
+                    try await extraction.value
+                } onCancel: {
+                    extraction.cancel()
+                }
+                try Task.checkCancellation()
+                bookTranslations[id]?.total = paragraphs.count
+                guard !paragraphs.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
+                let concurrency = BookTranslationPreferences.concurrency()
+                let completedAll = try await withThrowingTaskGroup(of: Bool.self) { group in
+                    var nextIndex = 0
+                    var hadFailure = false
+                    func enqueue(_ paragraph: String) {
+                        group.addTask {
+                            try Task.checkCancellation()
+                            do {
+                                let lines = await BingTranslateClient.sourceLines(for: paragraph)
+                                _ = try await BingTranslateClient.translate(lines, targetLanguage: targetLanguage)
+                                try Task.checkCancellation()
+                                return true
+                            } catch {
+                                try Task.checkCancellation()
+                                return false
+                            }
+                        }
+                    }
+                    while nextIndex < min(concurrency, paragraphs.count) {
+                        enqueue(paragraphs[nextIndex])
+                        nextIndex += 1
+                    }
+                    while let succeeded = try await group.next() {
+                        try Task.checkCancellation()
+                        if succeeded {
+                            bookTranslations[id]?.completed += 1
+                        } else {
+                            hadFailure = true
+                        }
+                        if nextIndex < paragraphs.count {
+                            enqueue(paragraphs[nextIndex])
+                            nextIndex += 1
+                        }
+                    }
+                    return !hadFailure
+                }
+                bookTranslations[id]?.phase = completedAll ? .finished : .failed
+            } catch {
+                guard !Task.isCancelled else { return }
+                bookTranslations[id]?.phase = .failed
+            }
+            translationTasks[id] = nil
+        }
+    }
+
+    func cancelBookTranslation(id: UUID) {
+        translationTasks.removeValue(forKey: id)?.cancel()
+        bookTranslations[id] = nil
+    }
 
     func coverURL(for book: BookRecord) -> URL? {
         guard let relativePath = book.coverRelativePath else { return nil }

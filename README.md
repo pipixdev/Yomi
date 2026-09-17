@@ -15,6 +15,8 @@ It currently focuses on a few core experiences:
 - Looking up analyzed words in the native iOS dictionary or an optional configurable external dictionary URL scheme
 - Reading analyzed paragraphs aloud with synchronized word highlighting
 - Translating analyzed Japanese paragraphs on demand with Bing's online translation service
+- Translating entire books from the cover menu in an app background task, with configurable concurrency (default 60 paragraphs), progress, cancellation, and reusable paragraph caches (iOS may suspend execution when the app is backgrounded)
+- Saving paragraph bookmarks and returning to their original reading pages from a global bookmarks folder
 - Saving reading location and progress so users can continue later
 
 ## Current Project Status
