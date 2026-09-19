@@ -320,6 +320,39 @@ private struct PlainTextImportView: View {
     }
 }
 
+/// Library progress notifications must not reload every visible cover from disk.
+private struct BookCoverArtwork: View, Equatable {
+    let url: URL?
+    let title: String
+    let importedAt: Date
+
+    var body: some View {
+        Group {
+            if let url, let image = PlatformImage(contentsOfFile: url.path) {
+                Image(platformImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(red: 0.96, green: 0.90, blue: 0.78), Color(red: 0.83, green: 0.89, blue: 0.96)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .overlay(alignment: .bottomLeading) {
+                        Text(title)
+                            .font(.headline)
+                            .lineLimit(4)
+                            .padding(16)
+                            .foregroundStyle(.black.opacity(0.8))
+                    }
+            }
+        }
+    }
+}
+
 private struct BookCardView: View {
     let book: BookRecord
     let onOpen: () -> Void
@@ -331,29 +364,8 @@ private struct BookCardView: View {
     var body: some View {
         Button(action: onOpen) {
             VStack(alignment: .leading, spacing: 10) {
-                Group {
-                    if let coverURL = store.coverURL(for: book), let image = PlatformImage(contentsOfFile: coverURL.path) {
-                        Image(platformImage: image)
-                            .resizable()
-                            .scaledToFill()
-                    } else {
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color(red: 0.96, green: 0.90, blue: 0.78), Color(red: 0.83, green: 0.89, blue: 0.96)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .overlay(alignment: .bottomLeading) {
-                                Text(book.title)
-                                    .font(.headline)
-                                    .lineLimit(4)
-                                    .padding(16)
-                                    .foregroundStyle(.black.opacity(0.8))
-                            }
-                    }
-                }
+                BookCoverArtwork(url: store.coverURL(for: book), title: book.title, importedAt: book.importedAt)
+                .equatable()
                 .aspectRatio(2 / 3, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .shadow(color: .black.opacity(0.08), radius: 12, y: 6)

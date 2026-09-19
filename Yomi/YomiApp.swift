@@ -1,4 +1,7 @@
 import SwiftUI
+// Xcode runs App Intents metadata extraction for app targets. Declare its system
+// framework so that build step can complete even when no intents are exposed.
+import AppIntents
 
 enum AppThemePreference: String, CaseIterable, Identifiable {
     case system

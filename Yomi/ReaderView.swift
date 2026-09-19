@@ -22,6 +22,7 @@ struct ReaderView: View {
     var bookmarkLocatorJSON: String? = nil
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var store: LibraryStore
     @AppStorage("reader.fontScale") private var readerFontScale = 1.0
     @AppStorage("reader.pageMarginsScale") private var readerPageMarginsScale = 1.0
@@ -67,6 +68,10 @@ struct ReaderView: View {
                 )
             }
         }
+        .onDisappear { store.flushReadingProgress() }
+        .onChange(of: scenePhase) { phase in
+            if phase != .active { store.flushReadingProgress() }
+        }
     }
 }
 
@@ -104,6 +109,12 @@ private struct ReadiumReaderContainer: UIViewControllerRepresentable {
         return navigationController
     }
 
+    static func dismantleUIViewController(_ controller: UINavigationController, coordinator: ()) {
+        for reader in controller.viewControllers.compactMap({ $0 as? ReadiumReaderViewController }) {
+            reader.stopLoading()
+        }
+    }
+
     func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {
         guard let reader = uiViewController.viewControllers
             .compactMap({ $0 as? ReadiumReaderViewController })
@@ -133,6 +144,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     private let spinner = UIActivityIndicatorView(style: .large)
     private let readium = ReadiumRuntime()
 
+    private var loadTask: Task<Void, Never>?
     private var publication: Publication?
     private var navigator: EPUBNavigatorViewController?
     private var pendingAnalysisParagraphIndex: Int?
@@ -173,8 +185,8 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         setupSpinner()
         setupNavigationChrome()
 
-        Task {
-            await loadReader()
+        loadTask = Task { [weak self] in
+            await self?.loadReader()
         }
     }
 
@@ -188,7 +200,20 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         revealPendingAnalysisParagraph()
     }
 
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isMovingFromParent || navigationController?.isBeingDismissed == true {
+            stopLoading()
+        }
+    }
+
+    func stopLoading() {
+        loadTask?.cancel()
+        store.flushReadingProgress()
+    }
+
     deinit {
+        loadTask?.cancel()
         publication?.close()
     }
 
@@ -210,12 +235,14 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     private func loadReader() async {
         do {
             let asset = try await makeReaderAsset()
+            try Task.checkCancellation()
             let publication = try await readium.publicationOpener.open(
                 asset: asset,
                 allowUserInteraction: true,
                 sender: self
             ).get()
 
+            try Task.checkCancellation()
             guard publication.conforms(to: .epub) else {
                 throw CocoaError(.fileReadUnsupportedScheme)
             }
@@ -249,6 +276,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             spinner.stopAnimating()
             spinner.removeFromSuperview()
         } catch {
+            guard !Task.isCancelled else { return }
             showError(error.localizedDescription)
         }
     }
@@ -329,7 +357,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
 
     func navigator(_ navigator: EPUBNavigatorViewController, setupUserScripts userContentController: WKUserContentController) {
         userContentController.removeScriptMessageHandler(forName: Self.analyzeParagraphHandlerName)
-        userContentController.add(self, name: Self.analyzeParagraphHandlerName)
+        userContentController.add(WeakReaderScriptMessageHandler(self), name: Self.analyzeParagraphHandlerName)
         userContentController.addUserScript(
             WKUserScript(
                 source: Self.paragraphAnalysisScript(
@@ -342,7 +370,8 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == Self.analyzeParagraphHandlerName else {
+        guard message.name == Self.analyzeParagraphHandlerName,
+              navigationController?.topViewController === self else {
             return
         }
 
@@ -361,14 +390,9 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
               let selectors = body["selectors"] as? [String],
               let highlights = body["highlights"] as? [String],
               selectors.count == paragraphs.count, highlights.count == paragraphs.count else { return }
-        let locators = zip(selectors, highlights).compactMap { selector, highlight -> String? in
-            let json: [String: Any] = ["href": link.href, "type": "application/xhtml+xml",
-                "locations": ["cssSelector": selector], "text": ["highlight": highlight]]
-            guard let data = try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]) else { return nil }
-            return String(data: data, encoding: .utf8)
-        }
-        guard locators.count == paragraphs.count else { return }
-        presentParagraphAnalysis(paragraphs: paragraphs, initialIndex: index, locators: locators)
+        // Serialize only the paragraph actually displayed/bookmarked, not the whole chapter.
+        let context = ReaderParagraphContext(href: link.href, selectors: selectors, highlights: highlights)
+        presentParagraphAnalysis(paragraphs: paragraphs, initialIndex: index, context: context)
     }
 
     func applyUserPreferences(fontScale: Double, pageMarginsScale: Double, fontOptionRawValue: String) {
@@ -413,8 +437,9 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         }
     }
 
-    private func presentParagraphAnalysis(paragraphs: [String], initialIndex: Int, locators: [String]) {
-        guard !paragraphs.isEmpty, paragraphs.indices.contains(initialIndex) else {
+    private func presentParagraphAnalysis(paragraphs: [String], initialIndex: Int, context: ReaderParagraphContext) {
+        guard navigationController?.topViewController === self,
+              !paragraphs.isEmpty, paragraphs.indices.contains(initialIndex) else {
             return
         }
 
@@ -427,7 +452,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
                 initialIndex: initialIndex,
                 store: store,
                 bookID: bookID,
-                bookmarkLocators: locators,
+                bookmarkLocator: { context.locator(at: $0) },
                 onParagraphChange: { [weak self] index in
                     self?.pendingAnalysisParagraphIndex = index
                 }
@@ -460,22 +485,44 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
       const ANALYZE_HANDLER_NAME = '\(Self.analyzeParagraphHandlerName)';
       const ANALYZE_LABEL = '\(escapedAnalyzeLabel)';
 
-      const paragraphEntries = () => Array.from(document.querySelectorAll(SLOT_SELECTOR))
-        .map(slot => ({
-          slot,
-          target: slot.previousElementSibling,
-          text: (slot.dataset.yomiParagraphText || '').trim()
-        }))
-        .filter(entry => entry.target && entry.text);
-
-      const selectorFor = element => {
-        const parts = [];
-        while (element && element !== document.documentElement) {
-          const position = Array.from(element.parentElement.children).indexOf(element) + 1;
-          parts.unshift(`${element.localName}:nth-child(${position})`);
-          element = element.parentElement;
+      let cachedEntries = null;
+      let cachedPayload = null;
+      const paragraphEntries = () => {
+        if (!cachedEntries) {
+          cachedEntries = Array.from(document.querySelectorAll(SLOT_SELECTOR))
+            .map(slot => ({
+              target: slot.previousElementSibling,
+              text: (slot.dataset.yomiParagraphText || '').trim()
+            }))
+            .filter(entry => entry.target && entry.text);
         }
-        return 'html > ' + parts.join(' > ');
+        return cachedEntries;
+      };
+
+      const chapterPayload = entries => {
+        if (cachedPayload) return cachedPayload;
+        const selectors = new WeakMap();
+        const positions = new WeakMap();
+        const selectorFor = element => {
+          if (element === document.documentElement) return 'html';
+          if (selectors.has(element)) return selectors.get(element);
+          const parent = element.parentElement;
+          if (!positions.has(parent)) {
+            const siblings = new WeakMap();
+            Array.from(parent.children).forEach((child, index) => siblings.set(child, index + 1));
+            positions.set(parent, siblings);
+          }
+          const selector = selectorFor(parent) + ' > ' + element.localName
+            + ':nth-child(' + positions.get(parent).get(element) + ')';
+          selectors.set(element, selector);
+          return selector;
+        };
+        cachedPayload = {
+          paragraphs: entries.map(entry => entry.text),
+          selectors: entries.map(entry => selectorFor(entry.target)),
+          highlights: entries.map(entry => entry.target.textContent)
+        };
+        return cachedPayload;
       };
 
       const openAnalysis = target => {
@@ -486,9 +533,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         const handler = window.webkit?.messageHandlers?.[ANALYZE_HANDLER_NAME];
         if (!handler || !handler.postMessage) return;
         handler.postMessage({
-          paragraphs: entries.map(entry => entry.text),
-          selectors: entries.map(entry => selectorFor(entry.target)),
-          highlights: entries.map(entry => entry.target.textContent),
+          ...chapterPayload(entries),
           index
         });
       };
@@ -543,6 +588,8 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
       const bootstrap = () => {
         hydrateTree(document);
         const observer = new MutationObserver(mutations => {
+          cachedEntries = null;
+          cachedPayload = null;
           for (const mutation of mutations) {
             mutation.addedNodes.forEach(node => {
               if (node.nodeType === Node.ELEMENT_NODE) {
@@ -561,6 +608,45 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
       }
     })();
     """
+    }
+}
+
+/// WKUserContentController retains its handlers; never let it own the reader.
+private final class WeakReaderScriptMessageHandler: NSObject, WKScriptMessageHandler {
+    private weak var target: (any WKScriptMessageHandler)?
+
+    init(_ target: any WKScriptMessageHandler) {
+        self.target = target
+        super.init()
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        target?.userContentController(userContentController, didReceive: message)
+    }
+}
+
+private final class ReaderParagraphContext {
+    let href: String
+    let selectors: [String]
+    let highlights: [String]
+    private var cachedIndex: Int?
+    private var cachedLocator: String?
+
+    init(href: String, selectors: [String], highlights: [String]) {
+        self.href = href
+        self.selectors = selectors
+        self.highlights = highlights
+    }
+
+    func locator(at index: Int) -> String? {
+        guard selectors.indices.contains(index), highlights.indices.contains(index) else { return nil }
+        if cachedIndex == index { return cachedLocator }
+        let json: [String: Any] = ["href": href, "type": "application/xhtml+xml",
+            "locations": ["cssSelector": selectors[index]], "text": ["highlight": highlights[index]]]
+        guard let data = try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]) else { return nil }
+        cachedIndex = index
+        cachedLocator = String(data: data, encoding: .utf8)
+        return cachedLocator
     }
 }
 

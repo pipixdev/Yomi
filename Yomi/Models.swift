@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct BookRecord: Identifiable, Codable, Hashable {
+nonisolated struct BookRecord: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     var title: String
     var author: String
@@ -96,7 +96,7 @@ struct BookRecord: Identifiable, Codable, Hashable {
     }
 }
 
-struct ReaderToken: Identifiable, Hashable {
+nonisolated struct ReaderToken: Identifiable, Hashable, Sendable {
     let id: Int
     let surface: String
     let reading: String?
@@ -105,7 +105,7 @@ struct ReaderToken: Identifiable, Hashable {
     let verbGroup: ReaderVerbGroup?
 }
 
-enum ReaderPartOfSpeech: String, Hashable, CaseIterable {
+nonisolated enum ReaderPartOfSpeech: String, Hashable, CaseIterable, Sendable {
     case noun
     case verb
     case particle
@@ -137,7 +137,7 @@ enum ReaderPartOfSpeech: String, Hashable, CaseIterable {
     }
 }
 
-enum ReaderVerbGroup: String, Hashable {
+nonisolated enum ReaderVerbGroup: String, Hashable, Sendable {
     case ichidan
     case godan
     case sahen

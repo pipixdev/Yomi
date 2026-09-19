@@ -29,6 +29,10 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var bookTranslations: [UUID: BookTranslationProgress] = [:]
     private var translationTasks: [UUID: Task<Void, Never>] = [:]
 
+    private let manifestWriter = LibraryManifestWriter()
+    private var progressSaveTask: Task<Void, Never>?
+    private var hasPendingProgress = false
+    private var manifestRevision = 0
     private let manifestURL: URL
     private let fileManager: FileManager
     private let bundledBooksFolderName = "PreloadedBooks"
@@ -281,9 +285,22 @@ final class LibraryStore: ObservableObject {
     func updateReadingProgress(for bookID: UUID, locator: Locator) {
         guard let index = books.firstIndex(where: { $0.id == bookID }) else { return }
 
-        books[index].lastReadLocatorJSON = try? locator.jsonString()
-        books[index].readingProgression = locator.locations.totalProgression ?? locator.locations.progression
-        try? persist()
+        guard let json = try? locator.jsonString() else { return }
+        let progression = locator.locations.totalProgression ?? locator.locations.progression
+        guard books[index].lastReadLocatorJSON != json || books[index].readingProgression != progression else { return }
+        var updated = books[index]
+        updated.lastReadLocatorJSON = json
+        updated.readingProgression = progression
+        books[index] = updated
+        manifestRevision += 1
+        hasPendingProgress = true
+        // Throttle rather than debounce: continuous page turns still checkpoint every second.
+        guard progressSaveTask == nil else { return }
+        progressSaveTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 1_000_000_000) }
+            catch { return }
+            self?.flushReadingProgress()
+        }
     }
 #endif
 
@@ -425,11 +442,37 @@ final class LibraryStore: ObservableObject {
         return decoded
     }
 
+    func flushReadingProgress() {
+        progressSaveTask?.cancel()
+        progressSaveTask = nil
+        guard hasPendingProgress else { return }
+        hasPendingProgress = false
+        let revision = manifestRevision
+#if canImport(UIKit)
+        // Finish the queued atomic write if the scene is entering the background.
+        let backgroundTask = ReadingProgressBackgroundTask()
+#endif
+        manifestWriter.enqueue(books, to: manifestURL) { [weak self] error in
+            Task { @MainActor [weak self] in
+                if let error {
+                    if self?.manifestRevision == revision { self?.hasPendingProgress = true }
+                    print("Yomi reading progress save failed: \(error)")
+                }
+#if canImport(UIKit)
+                backgroundTask.end()
+#endif
+            }
+        }
+    }
+
     private func persist() throws {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(books)
-        try data.write(to: manifestURL, options: [.atomic])
+        progressSaveTask?.cancel()
+        progressSaveTask = nil
+        manifestRevision += 1
+        // All writers share the same serial queue. An older progress snapshot must never
+        // overwrite a later import, rebuild, or deletion.
+        try manifestWriter.writeSynchronously(books, to: manifestURL)
+        hasPendingProgress = false
     }
 
     private static func loadBooks(from url: URL) throws -> [BookRecord] {
@@ -455,7 +498,7 @@ final class LibraryStore: ObservableObject {
     }
 
     private func applicationSupportBaseURL() -> URL? {
-        try? fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+        manifestURL.deletingLastPathComponent()
     }
 
     private func bundledEPUBURLs() -> [URL] {
@@ -675,6 +718,26 @@ private final class ReadiumLibraryImporter {
 
         try data.write(to: coverURL, options: [.atomic])
         return "Books/\(bookID.uuidString)/cover.png"
+    }
+}
+#endif
+
+#if canImport(UIKit)
+@MainActor
+private final class ReadingProgressBackgroundTask {
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+
+    init() {
+        identifier = UIApplication.shared.beginBackgroundTask(withName: "Save reading progress") { [weak self] in
+            self?.end()
+        }
+    }
+
+    func end() {
+        guard identifier != .invalid else { return }
+        let current = identifier
+        identifier = .invalid
+        UIApplication.shared.endBackgroundTask(current)
     }
 }
 #endif

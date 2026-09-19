@@ -12,10 +12,11 @@ import WebKit
 struct ParagraphAnalysisView: View {
     @ObservedObject var store: LibraryStore
     let bookID: UUID
-    let bookmarkLocators: [String]
+    let bookmarkLocator: (Int) -> String?
     let paragraphs: [String]
     let onParagraphChange: (Int) -> Void
-    private let textAnalyzer: JapaneseTextAnalyzer
+    @State private var textAnalyzer = ParagraphTokenizationService()
+    @State private var isTokenizing = true
 
     @AppStorage("analysis.fontScale") private var analysisFontScale = 1.0
     @AppStorage(DictionaryLookupPreferences.externalLookupEnabledKey) private var isExternalDictionaryEnabled = false
@@ -40,24 +41,21 @@ struct ParagraphAnalysisView: View {
         initialIndex: Int,
         store: LibraryStore,
         bookID: UUID,
-        bookmarkLocators: [String],
+        bookmarkLocator: @escaping (Int) -> String?,
         onParagraphChange: @escaping (Int) -> Void
     ) {
-        let normalizedParagraphs = paragraphs
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        let safeParagraphs = normalizedParagraphs.isEmpty ? [""] : normalizedParagraphs
+        // The reader bridge already filters empty paragraphs. Preserve its indices so
+        // bookmark locators and return-to-paragraph navigation stay aligned.
+        let safeParagraphs = paragraphs.isEmpty ? [""] : paragraphs
         let safeIndex = min(max(initialIndex, 0), safeParagraphs.count - 1)
-        let analyzer = JapaneseTextAnalyzer()
 
         self.store = store
         self.bookID = bookID
-        self.bookmarkLocators = bookmarkLocators
+        self.bookmarkLocator = bookmarkLocator
         self.paragraphs = safeParagraphs
         self.onParagraphChange = onParagraphChange
-        textAnalyzer = analyzer
         _currentIndex = State(initialValue: safeIndex)
-        _tokens = State(initialValue: analyzer.tokens(for: safeParagraphs[safeIndex]))
+        _tokens = State(initialValue: [])
     }
 
     private var speechText: String {
@@ -80,7 +78,9 @@ struct ParagraphAnalysisView: View {
                             .frame(height: 1)
                             .id(ScrollTarget.top)
 
-                        if tokens.isEmpty {
+                        if isTokenizing {
+                            ProgressView().padding(20)
+                        } else if tokens.isEmpty {
                             CompatibilityUnavailableView(
                                 "No tokens found",
                                 systemImage: "text.word.spacing"
@@ -145,6 +145,13 @@ struct ParagraphAnalysisView: View {
         } message: { Text(store.bookmarkError ?? "") }
         .navigationTitle(String(localized: "Parse"))
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: currentIndex) {
+            let index = currentIndex
+            let result = await textAnalyzer.tokens(for: paragraphs[index])
+            guard !Task.isCancelled, currentIndex == index else { return }
+            tokens = result
+            isTokenizing = false
+        }
         .task(id: translationCacheIdentity) {
             await restoreCachedTranslation()
         }
@@ -161,8 +168,7 @@ struct ParagraphAnalysisView: View {
             }
 
             ToolbarItemGroup(placement: .navigationBarTrailing) {
-                if bookmarkLocators.indices.contains(currentIndex) {
-                    let locator = bookmarkLocators[currentIndex]
+                if let locator = bookmarkLocator(currentIndex) {
                     let saved = store.isBookmarked(bookID: bookID, locatorJSON: locator)
                     Button {
                         store.toggleBookmark(bookID: bookID, text: paragraphs[currentIndex], locatorJSON: locator)
@@ -193,6 +199,7 @@ struct ParagraphAnalysisView: View {
                 } label: {
                     speechPlaybackImage
                 }
+                .disabled(isTokenizing)
                 .accessibilityLabel(
                     speechPlayback.isSpeaking
                         ? String(localized: "Stop reading")
@@ -208,6 +215,7 @@ struct ParagraphAnalysisView: View {
         .onDisappear {
             translationRequestID = nil
             speechPlayback.stop()
+            speechPlayback.onRangeChange = nil
         }
 #endif
         .sheet(item: $activePresentation) { presentation in
@@ -267,7 +275,8 @@ struct ParagraphAnalysisView: View {
             translationRequestID = nil
             translationState = .idle
             currentIndex = proposedIndex
-            tokens = textAnalyzer.tokens(for: paragraphs[proposedIndex])
+            tokens = []
+            isTokenizing = true
 #if !canImport(UIKit)
             scrollProxy.scrollTo(ScrollTarget.top, anchor: .top)
 #endif
@@ -468,7 +477,6 @@ private struct ParagraphScrollContainer<Content: View>: UIViewControllerRepresen
     func updateUIViewController(_ controller: Controller, context: Context) {
         controller.host.rootView = content()
         controller.onDragEnded = onDragEnded
-        controller.host.view.invalidateIntrinsicContentSize()
     }
 
     final class Controller: UIViewController, UIGestureRecognizerDelegate {
@@ -695,16 +703,18 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        context.coordinator.tokens = tokens
         context.coordinator.onSelectToken = onSelectToken
         context.coordinator.highlightedRange = highlightedRange
-        let html = Self.documentHTML(for: tokens, fontScale: fontScale)
-        guard context.coordinator.currentHTML != html else {
+        let scale = min(max(fontScale, 0.7), 2.2)
+        guard context.coordinator.renderedFontScale != scale || context.coordinator.tokens != tokens else {
             context.coordinator.applyHighlight(in: webView)
             return
         }
-        context.coordinator.currentHTML = html
-        webView.loadHTMLString(html, baseURL: nil)
+        context.coordinator.tokens = tokens
+        context.coordinator.renderedFontScale = scale
+        context.coordinator.isDocumentReady = false
+        context.coordinator.appliedHighlight = nil
+        webView.loadHTMLString(Self.documentHTML(for: tokens, fontScale: scale), baseURL: nil)
     }
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
@@ -827,14 +837,29 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
           <script>
             (() => {
               const handler = window.webkit?.messageHandlers?.\(Coordinator.selectHandlerName.jsIdentifier);
+              const tokens = Array.from(document.querySelectorAll('.token'));
+              const starts = tokens.map(token => Number(token.dataset.start));
+              const ends = tokens.map(token => Number(token.dataset.end));
+              let highlighted = [];
               window.yomiHighlightRange = (start, length) => {
                 const lower = Number(start) || 0;
                 const upper = lower + (Number(length) || 0);
-                document.querySelectorAll('.token').forEach(token => {
-                  const tokenStart = Number(token.dataset.start);
-                  const tokenEnd = Number(token.dataset.end);
-                  token.classList.toggle('is-speaking', tokenStart < upper && tokenEnd > lower);
-                });
+                // Token offsets are ordered. Find the first overlap without scanning the paragraph.
+                let lo = 0, hi = tokens.length;
+                while (lo < hi) {
+                  const mid = (lo + hi) >>> 1;
+                  if (ends[mid] <= lower) lo = mid + 1;
+                  else hi = mid;
+                }
+                const next = [];
+                if (upper > lower) {
+                  for (let i = lo; i < tokens.length && starts[i] < upper; i++) next.push(i);
+                }
+                const nextSet = new Set(next);
+                const previousSet = new Set(highlighted);
+                highlighted.forEach(i => { if (!nextSet.has(i)) tokens[i].classList.remove('is-speaking'); });
+                next.forEach(i => { if (!previousSet.has(i)) tokens[i].classList.add('is-speaking'); });
+                highlighted = next;
               };
               const reportHeight = () => {
                 const root = document.documentElement;
@@ -870,7 +895,9 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
         var tokens: [ReaderToken]
         @Binding var contentHeight: CGFloat
         var onSelectToken: (ReaderToken) -> Void
-        var currentHTML = ""
+        var renderedFontScale: Double?
+        var isDocumentReady = false
+        var appliedHighlight: NSRange?
         var highlightedRange: NSRange?
 
         init(
@@ -884,6 +911,7 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            isDocumentReady = true
             updateHeight(from: webView)
             applyHighlight(in: webView)
         }
@@ -932,7 +960,10 @@ private struct AnalysisTokensWebView: UIViewRepresentable {
         }
 
         func applyHighlight(in webView: WKWebView) {
+            guard isDocumentReady else { return }
             let range = highlightedRange ?? NSRange(location: 0, length: 0)
+            guard appliedHighlight != range else { return }
+            appliedHighlight = range
             webView.evaluateJavaScript(
                 "window.yomiHighlightRange?.(\(range.location), \(range.length));"
             )
