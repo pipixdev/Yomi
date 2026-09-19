@@ -278,6 +278,22 @@
         }
       }
     },
+    "Book actions" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Book actions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "书籍操作"
+          }
+        }
+      }
+    },
     "Book" : {
       "extractionState" : "manual",
       "localizations" : {

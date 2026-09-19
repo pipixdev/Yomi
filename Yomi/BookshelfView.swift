@@ -23,7 +23,7 @@ struct BookshelfView: View {
 
     @State private var importingFile = false
     @State private var showingTextImport = false
-    @State private var selectedBook: ReaderSelection?
+    @State private var interaction = BookshelfInteraction()
     @State private var pendingRemoval: BookRecord?
     @State private var showingSettings = false
     @State private var showingBookmarks = false
@@ -162,9 +162,6 @@ struct BookshelfView: View {
             ) {
                 if let book = pendingRemoval {
                     Button("Remove", role: .destructive) {
-                        if selectedBook?.id == book.id {
-                            selectedBook = nil
-                        }
                         store.removeBook(id: book.id)
                         pendingRemoval = nil
                     }
@@ -181,17 +178,14 @@ struct BookshelfView: View {
                 )
             }
         }
-        // Keep the source inert; the reader owns the only loading indicator.
-        .disabled(selectedBook != nil)
-        .accessibilityHidden(selectedBook != nil)
 #if os(iOS)
-        .fullScreenCover(item: $selectedBook) { selection in
+        .fullScreenCover(item: readerSelection) { selection in
             ReaderView(bookID: selection.id) {
                 closeReader(selection)
             }
         }
 #else
-        .sheet(item: $selectedBook) { selection in
+        .sheet(item: readerSelection) { selection in
             ReaderView(bookID: selection.id) {
                 closeReader(selection)
             }
@@ -199,15 +193,26 @@ struct BookshelfView: View {
 #endif
     }
 
+    private var readerSelection: Binding<ReaderSelection?> {
+        let presentedID = interaction.readerID
+        return Binding(
+            get: { interaction.readerID.map { ReaderSelection(id: $0) } },
+            set: { selection in
+                if selection == nil, let id = presentedID {
+                    closeReader(ReaderSelection(id: id))
+                }
+            }
+        )
+    }
+
     private func closeReader(_ selection: ReaderSelection) {
-        // The native back transition has already finished. Clear its source state
-        // directly, without adding a second modal transition and delayed unlock.
-        guard selectedBook?.id == selection.id else { return }
+        withoutReaderAnimation { interaction.closeReader(selection.id) }
+    }
+
+    private func withoutReaderAnimation(_ action: () -> Void) {
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            selectedBook = nil
-        }
+        withTransaction(transaction, action)
     }
 
     private var libraryContent: some View {
@@ -225,23 +230,22 @@ struct BookshelfView: View {
     private func bookCard(for book: BookRecord) -> some View {
         BookCardView(
             book: book,
-            onOpen: {
-                guard selectedBook == nil else { return }
-                // Present the lightweight reader shell immediately; Readium owns loading.
-                // EPUB work starts only after its first viewDidAppear.
-                var transaction = Transaction(animation: nil)
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
-                    selectedBook = ReaderSelection(id: book.id)
-                }
-            },
-            onRebuild: {
-                Task {
-                    await store.rebuildBook(id: book.id)
-                }
-            },
-            onRemove: { pendingRemoval = book }
+            canPresentMenu: interaction.phase == .browsing,
+            onOpen: { withoutReaderAnimation { interaction.openBook(book.id) } },
+            onMenuBegin: { interaction.showActions(for: book.id) },
+            onMenuSelect: { interaction.selectAction($0, for: book.id) },
+            onMenuEnd: { finishMenu(for: book.id) }
         )
+    }
+
+    private func finishMenu(for id: UUID) {
+        guard let action = interaction.finishActions(for: id), store.book(id: id) != nil else { return }
+        switch action {
+        case .translate: store.translateBook(id: id)
+        case .cancelTranslation: store.cancelBookTranslation(id: id)
+        case .rebuild: Task { await store.rebuildBook(id: id) }
+        case .remove: pendingRemoval = store.book(id: id)
+        }
     }
 
     private var importButton: some View {
@@ -384,9 +388,11 @@ private struct BookCoverArtwork: View, Equatable {
 
 private struct BookCardView: View {
     let book: BookRecord
+    let canPresentMenu: Bool
     let onOpen: () -> Void
-    let onRebuild: () -> Void
-    let onRemove: () -> Void
+    let onMenuBegin: () -> Void
+    let onMenuSelect: (BookAction) -> Void
+    let onMenuEnd: () -> Void
 
     @EnvironmentObject private var store: LibraryStore
 
@@ -398,32 +404,6 @@ private struct BookCardView: View {
                 .aspectRatio(2 / 3, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
-                .overlay(alignment: .topTrailing) {
-                    Menu {
-                        if store.bookTranslations[book.id]?.phase == .running {
-                            Button { store.cancelBookTranslation(id: book.id) } label: {
-                                Label("Cancel translation", systemImage: "stop.circle")
-                            }
-                        } else {
-                            Button { store.translateBook(id: book.id) } label: {
-                                Label("Translate entire book", systemImage: "character.bubble")
-                            }
-                            .disabled(store.isImporting)
-                        }
-                        Button(action: onRebuild) {
-                            Label("Rebuild", systemImage: "arrow.triangle.2.circlepath")
-                        }
-                        Button(role: .destructive, action: onRemove) {
-                            Label("Remove", systemImage: "trash")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.headline.weight(.bold))
-                            .padding(10)
-                            .background(.thinMaterial, in: Circle())
-                    }
-                    .padding(12)
-                }
 
                 Text(book.title)
                     .font(.headline)
@@ -467,6 +447,18 @@ private struct BookCardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .topTrailing) {
+            BookActionsMenu(
+                isTranslating: store.bookTranslations[book.id]?.phase == .running,
+                canTranslate: !store.isImporting,
+                canPresent: canPresentMenu,
+                onBegin: onMenuBegin,
+                onSelect: onMenuSelect,
+                onEnd: onMenuEnd
+            )
+            .frame(width: 44, height: 44)
+            .padding(12)
+        }
     }
 }
 

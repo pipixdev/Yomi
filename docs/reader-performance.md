@@ -115,3 +115,27 @@ swiftc -parse-as-library Yomi/TranslationMemoryCache.swift Tests/TranslationMemo
 现在 `ReaderView` 将关闭事件显式回传给入口，由入口在同一个禁用动画的事务中清除自己的选择状态。原生返回完成后不再附加一段外层模态动画，列表禁用与选书保护随同一状态恢复。保留原生返回与左边缘侧滑；关闭事件仍仅在 dismissal root 的 `viewDidAppear` 触发，因此取消侧滑不会提前清空选择。解析页返回只弹出解析页，不触发关闭。两个入口继续拒绝打开期间的重复选择；退出仍取消加载并异步提交进度，没有新增等待、轮询或用户可见文案。
 
 验证范围：iOS Simulator 和真机 Debug 编译、命令行安装与运行；不将源码时序检查或编译结果视为已完成真机快速连点的交互复现。
+
+
+## 原生封面菜单与阅读器呈现
+
+真机日志确认了此前卡死的原因：菜单打开后点击封面，UIKit 报告宿主已经在显示 `_UIContextMenuActionsOnlyViewController`，拒绝呈现阅读器；原有选书状态却已写入并禁用了书架。仅将 `Menu` 移到开书按钮外不足以解决系统菜单退场期间的事件竞争。
+
+最新实现使用 `BookActionsMenu` 桥接原生 `UIButton + UIMenu`，删除临时自定义的 `BookActionsOverlay`、遮罩、anchor preference 和 `Layout`。菜单位置、动画、动态字号、辅助功能和外部点击取消交给 UIKit；翻译、取消翻译、重建、删除采用 `UIAction`，危险操作使用系统 destructive 样式。非 iOS 分支使用 SwiftUI `Menu`。
+
+- `BookshelfInteraction` 保留浏览／菜单／阅读三个互斥状态。`willDisplayMenuFor` 进入菜单状态，封面点击在菜单显示和整个退场动画期间均不能开书。
+- `UIAction` 只记录待执行操作，`willEndFor` 中通过系统 animator 的 `addCompletion` 完成状态恢复并执行动作。删除确认不会与尚未退出的菜单竞争呈现；无动画时使用同步完成路径，无固定延时或轮询。
+- 保留对 `super` 的生命周期调用，控件移除时请求 UIKit 关闭菜单。旧书籍关闭回调不能关闭另一本书，重复动作仅执行一次。
+- 菜单仅在 UIKit 请求配置时从最新翻译／导入状态创建，常规翻译进度更新只刷新轻量回调，不重建菜单项。UIAction 标签继续使用中英文字符串目录。
+- 书架不使用整页 `.disabled` 或自定义命中遮罩。阅读器的加载、原生返回／侧滑和进度保存流程不变。
+
+接口依据：[UIControl 菜单生命周期](https://developer.apple.com/documentation/uikit/uicontrol/contextmenuinteraction)、[系统菜单动画完成回调](https://developer.apple.com/documentation/uikit/uicontextmenuinteractionanimating)。
+
+回归命令：
+
+```sh
+swiftc Yomi/BookshelfInteraction.swift Tests/BookshelfInteractionChecks.swift -o /tmp/yomi-bookshelf-interaction-checks
+/tmp/yomi-bookshelf-interaction-checks
+```
+
+检查实际状态组件：菜单显示／退场期间点同本或另一本封面均不打开、取消完成后的下一次点击正常开书、四种动作仅在关闭完成后执行一次、无关与过期回调、退出立即打开，以及 10,000 轮切换。另执行 iPhone 17 模拟器／iPhone X Debug 编译和命令行安装、运行检查。状态回归和编译不等同于已完成 UIKit 触摸、VoiceOver 或动态字号的真机交互验证。
