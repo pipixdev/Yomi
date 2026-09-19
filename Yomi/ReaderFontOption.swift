@@ -14,9 +14,9 @@ enum ReaderFontOption: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .mincho:
-            return "Mincho"
+            return String(localized: "Mincho")
         case .gothic:
-            return "Gothic"
+            return String(localized: "Gothic")
         }
     }
 }

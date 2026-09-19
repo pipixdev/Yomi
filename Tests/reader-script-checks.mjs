@@ -101,20 +101,5 @@ fixture.click(3000);
 assert.equal(fixture.messages.at(-1).paragraphs.length, 3001, 'DOM changes must invalidate cached data');
 assert.equal(fixture.messages.at(-1).selectors[3000], 'html > body:nth-child(1) > section:nth-child(1) > p:nth-child(6001)');
 
-const analysisSource = fs.readFileSync(new URL('../Yomi/ParagraphAnalysisView.swift', import.meta.url), 'utf8');
-const highlightScript = analysisSource.slice(analysisSource.indexOf('              const tokens = Array.from'), analysisSource.indexOf('              const reportHeight ='));
-const active = new Set();
-const tokens = Array.from({ length: 10000 }, (_, index) => ({
-  dataset: { start: String(index * 3), end: String(index * 3 + 3) },
-  classList: { add() { active.add(index); }, remove() { active.delete(index); } }
-}));
-const highlightWindow = {};
-let tokenQueries = 0;
-vm.runInNewContext(highlightScript, { window: highlightWindow, document: { querySelectorAll() { tokenQueries++; return tokens; } } });
-for (const [start, length] of [[0, 1], [29997, 3], [15001, 9], [0, 0], [30000, 1], [5, 0], [8, 20], [1, 1]]) {
-  highlightWindow.yomiHighlightRange(start, length);
-  const expected = tokens.flatMap((token, i) => length > 0 && Number(token.dataset.start) < start + length && Number(token.dataset.end) > start ? [i] : []);
-  assert.deepEqual([...active].sort((a, b) => a - b), expected);
-}
-assert.equal(tokenQueries, 1, 'Speech ticks must reuse the token index');
-console.log(`PASS: 3,000-paragraph bridge (${elapsed.toFixed(1)} ms in synthetic DOM, ${firstMetrics.siblingVisits} sibling visits), cache invalidation, locator indices, selection/keyboard behavior, 10,000-token highlighting.`);
+console.log(`PASS: 3,000-paragraph bridge (${elapsed.toFixed(1)} ms in synthetic DOM, ${firstMetrics.siblingVisits} sibling visits), cache invalidation, locator indices, selection/keyboard behavior.`);
+await import('./analysis-scroll-checks.mjs');

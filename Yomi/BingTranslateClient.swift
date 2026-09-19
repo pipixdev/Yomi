@@ -76,7 +76,7 @@ private actor BingTranslateService {
     ).first?
         .appendingPathComponent("Translations", isDirectory: true)
         .appendingPathComponent("v1", isDirectory: true)
-    private var translations: [String: [String]] = [:]
+    private var translations = TranslationMemoryCache()
 
     enum ClientError: Error {
         case invalidResponse
@@ -138,7 +138,7 @@ private actor BingTranslateService {
                 targetLanguage: targetLanguage
             )
         }
-        translations[cacheKey] = result
+        translations.insert(result, for: cacheKey)
         persistTranslation(
             result,
             sourceLines: lines,
@@ -168,7 +168,7 @@ private actor BingTranslateService {
         targetLanguage: String,
         cacheKey: String
     ) -> [String]? {
-        if let cachedTranslation = translations[cacheKey] {
+        if let cachedTranslation = translations.value(for: cacheKey) {
             return cachedTranslation
         }
 
@@ -187,7 +187,7 @@ private actor BingTranslateService {
             return nil
         }
 
-        translations[cacheKey] = record.translatedLines
+        translations.insert(record.translatedLines, for: cacheKey)
         return record.translatedLines
     }
 

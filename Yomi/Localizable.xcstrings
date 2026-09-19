@@ -1,206 +1,34 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Save paragraphs from their detail page to find them here." : {
-      "extractionState" : "manual",
+    "Gothic" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save paragraphs from their detail page to find them here."
+            "value" : "Gothic"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在段落详情页收藏段落，即可在这里快速返回阅读。"
+            "value" : "黑体"
           }
         }
       }
     },
-    "Bookmark error" : {
-      "extractionState" : "manual",
+    "Mincho" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bookmark error"
+            "value" : "Mincho"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "书签保存失败"
-          }
-        }
-      }
-    },
-    "Remove bookmark" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove bookmark"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "取消收藏"
-          }
-        }
-      }
-    },
-    "Bookmark paragraph" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bookmark paragraph"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "收藏段落"
-          }
-        }
-      }
-    },
-    "Maximum paragraphs translated at once per book. Changes apply to new tasks." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Maximum paragraphs translated at once per book. Changes apply to new tasks."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每本书同时翻译的最大段落数，修改后对新任务生效。"
-          }
-        }
-      }
-    },
-    "Full-book translation" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Full-book translation"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "全文翻译"
-          }
-        }
-      }
-    },
-    "Concurrent paragraphs: %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Concurrent paragraphs: %lld"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "并发段落数：%lld"
-          }
-        }
-      }
-    },
-    "Translate entire book" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Translate entire book"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "全文翻译"
-          }
-        }
-      }
-    },
-    "Translation paused. Try again to resume." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Translation paused. Try again to resume."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "翻译已暂停，请重试以继续。"
-          }
-        }
-      }
-    },
-    "Translation cached" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Translation cached"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "全文翻译已缓存"
-          }
-        }
-      }
-    },
-    "Cancel translation" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancel translation"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "取消翻译"
-          }
-        }
-      }
-    },
-    "Translating: %lld / %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Translating: %lld / %lld"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "翻译中：%1$lld / %2$lld"
+            "value" : "明朝体"
           }
         }
       }
@@ -517,8 +345,41 @@
         }
       }
     },
+    "Bookmark error" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bookmark error"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "书签保存失败"
+          }
+        }
+      }
+    },
+    "Bookmark paragraph" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bookmark paragraph"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收藏段落"
+          }
+        }
+      }
+    },
     "Bookmarks" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -563,6 +424,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "取消"
+          }
+        }
+      }
+    },
+    "Cancel translation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel translation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消翻译"
           }
         }
       }
@@ -664,6 +542,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "即将支持"
+          }
+        }
+      }
+    },
+    "Concurrent paragraphs: %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Concurrent paragraphs: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "并发段落数：%lld"
           }
         }
       }
@@ -934,7 +829,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "词典 URL Scheme"
+            "value" : "词典链接模板"
           }
         }
       }
@@ -1069,7 +964,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "实验性 Edge 在线语音"
+            "value" : "实验性微软在线语音"
           }
         }
       }
@@ -1109,7 +1004,20 @@
       }
     },
     "Finishing import…" : {
-
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finishing import…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在完成导入…"
+          }
+        }
+      }
     },
     "Follow System" : {
       "localizations" : {
@@ -1176,6 +1084,23 @@
         }
       }
     },
+    "Full-book translation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full-book translation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全文翻译"
+          }
+        }
+      }
+    },
     "Godan" : {
       "localizations" : {
         "en" : {
@@ -1188,6 +1113,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "五段"
+          }
+        }
+      }
+    },
+    "Hide translation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide translation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起译文"
           }
         }
       }
@@ -1460,6 +1402,23 @@
         }
       }
     },
+    "Maximum paragraphs translated at once per book. Changes apply to new tasks." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maximum paragraphs translated at once per book. Changes apply to new tasks."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每本书同时翻译的最大段落数，修改后对新任务生效。"
+          }
+        }
+      }
+    },
     "mojisho://?search=搜索内容" : {
 
     },
@@ -1515,7 +1474,6 @@
       }
     },
     "No bookmarks yet" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1600,6 +1558,7 @@
       }
     },
     "No tokens found" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1817,7 +1776,20 @@
       }
     },
     "Page Margins" : {
-
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Page Margins"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "页面边距"
+          }
+        }
+      }
     },
     "Paragraph %lld" : {
       "extractionState" : "stale",
@@ -1969,10 +1941,36 @@
       }
     },
     "Preparing import…" : {
-
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing import…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备导入…"
+          }
+        }
+      }
     },
     "Preparing rebuild…" : {
-
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing rebuild…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备重建…"
+          }
+        }
+      }
     },
     "Preparing text…" : {
       "extractionState" : "manual",
@@ -2042,7 +2040,20 @@
       }
     },
     "Rebuild" : {
-
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rebuild"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重建书籍"
+          }
+        }
+      }
     },
     "Reference" : {
       "extractionState" : "stale",
@@ -2144,6 +2155,23 @@
         }
       }
     },
+    "Remove bookmark" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove bookmark"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消收藏"
+          }
+        }
+      }
+    },
     "Sahen" : {
       "localizations" : {
         "en" : {
@@ -2156,6 +2184,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "サ变"
+          }
+        }
+      }
+    },
+    "Save paragraphs from their detail page to find them here." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save paragraphs from their detail page to find them here."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在段落详情页收藏段落，即可在这里快速返回阅读。"
           }
         }
       }
@@ -2579,6 +2624,23 @@
         }
       }
     },
+    "Translate entire book" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translate entire book"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全文翻译"
+          }
+        }
+      }
+    },
     "Translate paragraph" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2592,6 +2654,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "翻译段落"
+          }
+        }
+      }
+    },
+    "Translating: %lld / %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translating: %lld / %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译中：%1$lld / %2$lld"
           }
         }
       }
@@ -2626,6 +2705,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "译文"
+          }
+        }
+      }
+    },
+    "Translation cached" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translation cached"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全文翻译已缓存"
+          }
+        }
+      }
+    },
+    "Translation paused. Try again to resume." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translation paused. Try again to resume."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译已暂停，请重试以继续。"
           }
         }
       }
@@ -2862,7 +2975,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当参考音频和参考文字都设置后，请求会自动附带 references。"
+            "value" : "当参考音频和参考文字都设置后，请求会自动附带参考信息。"
           }
         }
       }

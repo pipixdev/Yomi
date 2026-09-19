@@ -20,8 +20,8 @@ import WebKit
 struct ReaderView: View {
     let bookID: UUID
     var bookmarkLocatorJSON: String? = nil
+    let onClose: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var store: LibraryStore
     @AppStorage("reader.fontScale") private var readerFontScale = 1.0
@@ -45,9 +45,7 @@ struct ReaderView: View {
                     fontScale: readerFontScale,
                     pageMarginsScale: readerPageMarginsScale,
                     fontOptionRawValue: readerFontOptionRawValue,
-                    onClose: {
-                        dismiss()
-                    },
+                    onClose: onClose,
                     onLocationChange: { locator in
                         store.updateReadingProgress(for: book.id, locator: locator)
                     }
@@ -141,8 +139,8 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     private var readerPageMarginsScale: Double
     private var readerFontOption: ReaderFontOption
 
-    private let spinner = UIActivityIndicatorView(style: .large)
-    private let readium = ReadiumRuntime()
+    private lazy var readium = ReadiumRuntime()
+    private var isOpeningBook = true
 
     private var loadTask: Task<Void, Never>?
     private var publication: Publication?
@@ -182,12 +180,7 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         view.backgroundColor = .systemBackground
         edgesForExtendedLayout = []
         navigationItem.largeTitleDisplayMode = .never
-        setupSpinner()
         setupNavigationChrome()
-
-        loadTask = Task { [weak self] in
-            await self?.loadReader()
-        }
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -197,6 +190,13 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        // Present the lightweight, dismissible reader shell before opening the EPUB.
+        // Readium owns the only visible loading indicator once its spread is created.
+        if loadTask == nil {
+            loadTask = Task { [weak self] in
+                await self?.loadReader()
+            }
+        }
         revealPendingAnalysisParagraph()
     }
 
@@ -217,14 +217,11 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
         publication?.close()
     }
 
-    private func setupSpinner() {
-        spinner.translatesAutoresizingMaskIntoConstraints = false
-        spinner.startAnimating()
-        view.addSubview(spinner)
-        NSLayoutConstraint.activate([
-            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor)
-        ])
+    private func finishOpeningBook() {
+        guard isOpeningBook else { return }
+        isOpeningBook = false
+        navigator?.view.isUserInteractionEnabled = true
+        navigator?.view.accessibilityElementsHidden = false
     }
 
     private func setupNavigationChrome() {
@@ -272,9 +269,12 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
             self.publication = publication
             self.navigator = navigator
 
+            navigator.view.isUserInteractionEnabled = false
+            navigator.view.accessibilityElementsHidden = true
             embed(navigator)
-            spinner.stopAnimating()
-            spinner.removeFromSuperview()
+            // Expose Readium's own spread loader directly, without another spinner
+            // or opaque loading screen in front of it. Keep content interaction gated
+            // until the initial settled location, while the native back action works.
         } catch {
             guard !Task.isCancelled else { return }
             showError(error.localizedDescription)
@@ -319,8 +319,8 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     }
 
     private func showError(_ message: String) {
-        spinner.stopAnimating()
-        spinner.removeFromSuperview()
+        if isOpeningBook { navigator?.view.isHidden = true }
+        isOpeningBook = false
 
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -339,7 +339,19 @@ private final class ReadiumReaderViewController: UIViewController, EPUBNavigator
     }
 
     func navigator(_ navigator: Navigator, locationDidChange locator: Locator) {
+        guard loadTask?.isCancelled != true else { return }
+        // Readium emits this after the initial spread has loaded and navigation is idle.
+        finishOpeningBook()
         onLocationChange(locator)
+    }
+
+    func navigator(_ navigator: Navigator, didFailToLoadResourceAt href: RelativeURL, withError error: ReadError) {
+        // A missing initial chapter must end the loading state. Ignore optional assets
+        // and adjacent preloads here; those must not fail an otherwise readable page.
+        guard isOpeningBook, loadTask?.isCancelled != true,
+              let expected = navigator.currentLocation?.href ?? publication?.readingOrder.first?.url(),
+              expected.removingFragment().isEquivalentTo(href.anyURL.removingFragment()) else { return }
+        showError(error.localizedDescription)
     }
 
     func navigator(_ navigator: Navigator, presentError error: NavigatorError) {
@@ -689,11 +701,7 @@ private final class ReadiumRuntime {
     let httpClient = DefaultHTTPClient()
     lazy var assetRetriever = AssetRetriever(httpClient: httpClient)
     lazy var publicationOpener = PublicationOpener(
-        parser: DefaultPublicationParser(
-            httpClient: httpClient,
-            assetRetriever: assetRetriever,
-            pdfFactory: DefaultPDFDocumentFactory()
-        )
+        parser: EPUBParser()
     )
 }
 

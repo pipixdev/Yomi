@@ -4,8 +4,18 @@ import Foundation
 actor ParagraphTokenizationService {
     private var analyzer: JapaneseTextAnalyzer?
     private var cache: [String: [ReaderToken]] = [:]
+    private var markupCache: [String: String] = [:]
     private var order: [String] = []
     private var cachedTokenCount = 0
+
+    func renderedParagraph(for text: String) -> (tokens: [ReaderToken], html: String) {
+        let result = tokens(for: text)
+        guard !Task.isCancelled else { return ([], "") }
+        if let markup = markupCache[text] { return (result, markup) }
+        let markup = AnalysisTokenMarkup.render(result)
+        if cache[text] != nil { markupCache[text] = markup }
+        return (result, markup)
+    }
 
     func tokens(for text: String) -> [ReaderToken] {
         guard !Task.isCancelled else { return [] }
@@ -25,6 +35,7 @@ actor ParagraphTokenizationService {
             while order.count > 16 || cachedTokenCount > 12_000 {
                 let key = order.removeFirst()
                 cachedTokenCount -= cache.removeValue(forKey: key)?.count ?? 0
+                markupCache.removeValue(forKey: key)
             }
         }
         return result

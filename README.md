@@ -10,11 +10,11 @@ It currently focuses on a few core experiences:
 - Opening and reading EPUB content with Readium
 - Normalizing imported content to produce more consistent layout and paragraph structure
 - Adding ruby / furigana annotations to Japanese text
-- Opening paragraph analysis by tapping reading text, with vertical reading, an upward pull at the bottom to advance, a downward pull at the top to return to the previous paragraph, and return-to-paragraph positioning
+- Opening paragraph analysis by tapping reading text, with seamless continuous scrolling through the current chapter and return-to-paragraph positioning
 - Running MeCab-based paragraph token analysis for faster word inspection during reading
 - Looking up analyzed words in the native iOS dictionary or an optional configurable external dictionary URL scheme
 - Reading analyzed paragraphs aloud with synchronized word highlighting
-- Translating analyzed Japanese paragraphs on demand with Bing's online translation service
+- Translating analyzed Japanese paragraphs on demand with Bing's online translation service, with per-paragraph bookmark, translation show/hide, and read-aloud controls below the text
 - Translating entire books from the cover menu in an app background task, with configurable concurrency (default 60 paragraphs), progress, cancellation, and reusable paragraph caches (iOS may suspend execution when the app is backgrounded)
 - Saving paragraph bookmarks and returning to their original reading pages from a global bookmarks folder
 - Saving reading location and progress so users can continue later

@@ -48,8 +48,6 @@ struct ReaderPreferencesView: View {
                     }
                 } header: {
                     Text("Full-book translation")
-                } footer: {
-                    Text("Maximum paragraphs translated at once per book. Changes apply to new tasks.")
                 }
             }
             .navigationTitle(String(localized: "Settings"))

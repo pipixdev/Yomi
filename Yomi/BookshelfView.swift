@@ -130,15 +130,8 @@ struct BookshelfView: View {
                     .environmentObject(store)
             }
 #if os(iOS)
-            .fullScreenCover(item: $selectedBook) { selection in
-                ReaderView(bookID: selection.id)
-            }
             .sheet(isPresented: $showingSettings) {
                 ReaderPreferencesView()
-            }
-#else
-            .sheet(item: $selectedBook) { selection in
-                ReaderView(bookID: selection.id)
             }
 #endif
             .alert("Import Failed", isPresented: Binding(
@@ -188,6 +181,33 @@ struct BookshelfView: View {
                 )
             }
         }
+        // Keep the source inert; the reader owns the only loading indicator.
+        .disabled(selectedBook != nil)
+        .accessibilityHidden(selectedBook != nil)
+#if os(iOS)
+        .fullScreenCover(item: $selectedBook) { selection in
+            ReaderView(bookID: selection.id) {
+                closeReader(selection)
+            }
+        }
+#else
+        .sheet(item: $selectedBook) { selection in
+            ReaderView(bookID: selection.id) {
+                closeReader(selection)
+            }
+        }
+#endif
+    }
+
+    private func closeReader(_ selection: ReaderSelection) {
+        // The native back transition has already finished. Clear its source state
+        // directly, without adding a second modal transition and delayed unlock.
+        guard selectedBook?.id == selection.id else { return }
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            selectedBook = nil
+        }
     }
 
     private var libraryContent: some View {
@@ -205,7 +225,16 @@ struct BookshelfView: View {
     private func bookCard(for book: BookRecord) -> some View {
         BookCardView(
             book: book,
-            onOpen: { selectedBook = ReaderSelection(id: book.id) },
+            onOpen: {
+                guard selectedBook == nil else { return }
+                // Present the lightweight reader shell immediately; Readium owns loading.
+                // EPUB work starts only after its first viewDidAppear.
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    selectedBook = ReaderSelection(id: book.id)
+                }
+            },
             onRebuild: {
                 Task {
                     await store.rebuildBook(id: book.id)

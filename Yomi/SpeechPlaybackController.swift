@@ -208,6 +208,7 @@ extension SpeechPlaybackController: AVSpeechSynthesizerDelegate {
         willSpeakRangeOfSpeechString characterRange: NSRange,
         utterance: AVSpeechUtterance
     ) {
+        guard utterance === currentUtterance else { return }
         updateRange(characterRange)
     }
 
@@ -230,6 +231,7 @@ extension SpeechPlaybackController: AVSpeechSynthesizerDelegate {
 
 extension SpeechPlaybackController: AVAudioPlayerDelegate {
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        guard player === audioPlayer else { return }
         finishPlayback()
     }
 }
